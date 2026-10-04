@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/giicoo/ecst-go/consumer"
-	"github.com/giicoo/ecst-go/envelope"
+	"github.com/trepach-tech/ecst-go/consumer"
+	"github.com/trepach-tech/ecst-go/envelope"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 

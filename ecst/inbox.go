@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/giicoo/ecst-go/consumer"
-	"github.com/giicoo/ecst-go/producer"
+	"github.com/trepach-tech/ecst-go/consumer"
+	"github.com/trepach-tech/ecst-go/producer"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/giicoo/ecst-go/backoff"
-	"github.com/giicoo/ecst-go/consumer"
-	"github.com/giicoo/ecst-go/producer"
+	"github.com/trepach-tech/ecst-go/backoff"
+	"github.com/trepach-tech/ecst-go/consumer"
+	"github.com/trepach-tech/ecst-go/producer"
 )
 
 // Config собирает ECST-сервис из двух независимых частей.

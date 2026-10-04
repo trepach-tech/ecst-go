@@ -122,7 +122,6 @@ func (pc *pconsumer) consume(ctx context.Context) {
 				)
 			}
 		}
-
 	}
 }
 

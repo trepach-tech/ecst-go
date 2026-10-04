@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/giicoo/ecst-go/backoff"
-	"github.com/giicoo/ecst-go/consumer"
-	"github.com/giicoo/ecst-go/envelope"
+	"github.com/trepach-tech/ecst-go/backoff"
+	"github.com/trepach-tech/ecst-go/consumer"
+	"github.com/trepach-tech/ecst-go/envelope"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )

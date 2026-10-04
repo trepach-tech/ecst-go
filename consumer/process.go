@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/giicoo/ecst-go/backoff"
+	"github.com/trepach-tech/ecst-go/backoff"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/giicoo/ecst-go/consumer"
-	"github.com/giicoo/ecst-go/envelope"
+	"github.com/trepach-tech/ecst-go/consumer"
+	"github.com/trepach-tech/ecst-go/envelope"
 )
 
 // fakeStore - [OutboxStore], который считает вызовы и умеет падать

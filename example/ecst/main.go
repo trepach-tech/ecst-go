@@ -22,7 +22,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/giicoo/ecst-go/ecst"
+	"github.com/trepach-tech/ecst-go/ecst"
 )
 
 const (

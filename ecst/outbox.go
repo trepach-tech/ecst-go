@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/giicoo/ecst-go/backoff"
-	"github.com/giicoo/ecst-go/envelope"
-	"github.com/giicoo/ecst-go/producer"
+	"github.com/trepach-tech/ecst-go/backoff"
+	"github.com/trepach-tech/ecst-go/envelope"
+	"github.com/trepach-tech/ecst-go/producer"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 

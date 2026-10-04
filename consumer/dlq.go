@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/giicoo/ecst-go/producer"
+	"github.com/trepach-tech/ecst-go/producer"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/giicoo/ecst-go/backoff"
+	"github.com/trepach-tech/ecst-go/backoff"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
