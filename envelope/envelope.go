@@ -7,13 +7,13 @@ import (
 	"time"
 )
 
-// Record headers
+// Заголовки записи, которые дублируют поля конверта
 const (
-	HeaderEnvelopeType string = "envelope_type"
-	HeaderTraceID      string = "trace_id"
+	HeaderEntityType = "entity_type"
+	HeaderTraceID    = "trace_id"
 )
 
-// Type of operation
+// Op - что случилось с сущностью
 type Op string
 
 func (o Op) known() bool {
@@ -25,18 +25,22 @@ func (o Op) known() bool {
 	return false
 }
 
-// hasPayload tells whether the operation must carry a payload.
-// Delete only states the entity is gone, its state is no longer meaningful
+// hasPayload - обязан ли конверт с такой операцией нести payload.
+// Delete только сообщает, что сущности больше нет: состояния у нее уже не бывает
 func (o Op) hasPayload() bool { return o != OpDelete }
 
 const (
-	OpCreate Op = "c" // create
-	OpUpdate Op = "u" // update
-	OpDelete Op = "d" // delete
-	OpRead   Op = "r" // read
+	OpCreate Op = "c" // сущность создана
+	OpUpdate Op = "u" // состояние сущности изменилось
+	OpDelete Op = "d" // сущность удалена, payload не нужен
+	OpRead   Op = "r" // снимок текущего состояния: бэкфилл, первичная загрузка
 )
 
-// Envelope for event
+// Envelope - событие вместе со всем, что нужно его получателю:
+// какая сущность, какой версии, что с ней случилось и кто об этом сообщил.
+//
+// В ECST payload - полное состояние сущности, а не дельта: получатель
+// должен уметь собрать свою копию, ничего не доспрашивая
 type Envelope[T any] struct {
 	EntityType string    `json:"entity_type"`
 	EntityID   string    `json:"entity_id"`
@@ -48,12 +52,16 @@ type Envelope[T any] struct {
 	Source     Source    `json:"source"`
 }
 
-// Who produced the event and by which schema version
+// Source - кто опубликовал событие и по какой версии схемы
 type Source struct {
 	Service   string `json:"service"`
 	SchemaVer string `json:"schema_ver"`
 }
 
+// New собирает конверт с текущим временем.
+//
+// Source обязателен и выставляется отдельно - [Envelope.WithSource]:
+// без него конверт не пройдет [Envelope.Validate]
 func New[T any](entityType, entityID string, version int64, op Op, payload *T) Envelope[T] {
 	return Envelope[T]{
 		EntityType: entityType,
@@ -65,25 +73,26 @@ func New[T any](entityType, entityID string, version int64, op Op, payload *T) E
 	}
 }
 
-// WithSource fills [Source]. Without it a consumer cannot tell
-// who sent the event and how to read its payload
+// WithSource заполняет [Source]. Без него получатель не знает,
+// кто отправил событие и по какой схеме читать его payload
 func (e Envelope[T]) WithSource(service, schemaVer string) Envelope[T] {
 	e.Source = Source{Service: service, SchemaVer: schemaVer}
 
 	return e
 }
 
-// WithTraceID links the event to the request it was born in
+// WithTraceID связывает событие с запросом, в котором оно родилось
 func (e Envelope[T]) WithTraceID(traceID string) Envelope[T] {
 	e.TraceID = traceID
 
 	return e
 }
 
-// Validate reports every problem at once.
+// Validate возвращает все найденные проблемы разом.
 //
-// An event without EntityType, EntityID, Version or Source cannot be routed
-// or read by a consumer, so it must never reach the broker
+// Событие без EntityType, EntityID, Version или Source получатель
+// не сможет ни смаршрутизировать, ни прочитать, поэтому до брокера
+// такое доезжать не должно
 func (e Envelope[T]) Validate() error {
 	const op = "Envelope.Validate"
 
@@ -94,13 +103,13 @@ func (e Envelope[T]) Validate() error {
 		add("EntityType is required")
 	}
 
-	// EntityID is the partition key: without it the events of one entity
-	// scatter across partitions and lose their order
+	// EntityID - ключ партиционирования: без него события одной сущности
+	// разъедутся по партициям и потеряют порядок
 	if e.EntityID == "" {
 		add("EntityID is required")
 	}
 
-	// Version lets the consumer drop events it has already applied
+	// Version нужна получателю, чтоб отбрасывать уже примененные события
 	if e.Version <= 0 {
 		add("Version must be > 0")
 	}
@@ -114,8 +123,8 @@ func (e Envelope[T]) Validate() error {
 		add("Payload is required for Op " + string(e.Op))
 	}
 
-	// Without Source a consumer cannot tell who sent the event
-	// and by which schema to read its payload
+	// Без Source непонятно, кто отправил событие
+	// и по какой схеме читать его payload
 	if e.Source.Service == "" {
 		add("Source.Service is required")
 	}
@@ -130,11 +139,11 @@ func (e Envelope[T]) Validate() error {
 	return errors.Join(errs...)
 }
 
-// Headers duplicates the routing fields of the envelope: with them a record
-// is filtered and traced without decoding its payload
+// Headers дублирует маршрутные поля конверта: по ним запись фильтруют
+// и трейсят, не разбирая payload
 func (e Envelope[T]) Headers() map[string]string {
 	headers := map[string]string{
-		HeaderEnvelopeType: e.EntityType,
+		HeaderEntityType: e.EntityType,
 	}
 	if e.TraceID != "" {
 		headers[HeaderTraceID] = e.TraceID
@@ -143,8 +152,8 @@ func (e Envelope[T]) Headers() map[string]string {
 	return headers
 }
 
-// Json Encode. Validates first: a broken envelope is cheaper to catch here
-// than in every consumer
+// Encode сериализует конверт в JSON, предварительно его проверив:
+// битый конверт дешевле поймать здесь, чем в каждом получателе
 func (e Envelope[T]) Encode() ([]byte, error) {
 	const op = "Envelope.Encode"
 
@@ -160,7 +169,7 @@ func (e Envelope[T]) Encode() ([]byte, error) {
 	return raw, nil
 }
 
-// Json Decode
+// Decode разбирает конверт из JSON и проверяет его
 func Decode[T any](raw []byte) (Envelope[T], error) {
 	const op = "envelope.Decode"
 
@@ -170,8 +179,8 @@ func Decode[T any](raw []byte) (Envelope[T], error) {
 		return e, fmt.Errorf("%s: %w", op, err)
 	}
 
-	// The producer may be older than this consumer, or another service
-	// entirely: what came off the wire is checked, not trusted
+	// Отправитель может быть старее этого получателя или вообще чужим
+	// сервисом: то, что приехало с транспорта, проверяют, а не принимают на веру
 	if err := e.Validate(); err != nil {
 		return e, fmt.Errorf("%s: %w", op, err)
 	}

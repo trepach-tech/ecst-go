@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      # Юнит-тесты: без брокера интеграционные пропускаются сами
+      - name: unit tests
+        run: go test -race -count=1 ./...
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: start broker
+        run: |
+          docker compose up -d broker
+          for i in $(seq 1 30); do
+            if docker compose exec -T broker /opt/kafka/bin/kafka-topics.sh \
+              --bootstrap-server localhost:9092 --list >/dev/null 2>&1; then
+              echo "broker ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "broker did not come up"; docker compose logs broker; exit 1
+
+      # Топики тесты создают сами, поэтому брокера достаточно
+      - name: integration tests
+        env:
+          ECST_TEST_BROKERS: localhost:9092
+        run: go test -race -count=1 -timeout 20m ./...
+
+      - name: stop broker
+        if: always()
+        run: docker compose down -v

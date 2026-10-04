@@ -15,11 +15,11 @@ type Producer struct {
 }
 
 func NewProducer(cfg Config) (*Producer, error) {
-	if err := cfg.ValidateProducer(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("producer: %w", err)
 	}
 
-	client, err := kgo.NewClient(cfg.ProducerOpts()...)
+	client, err := kgo.NewClient(cfg.opts()...)
 	if err != nil {
 		return nil, fmt.Errorf("producer client: %w", err)
 	}
@@ -29,6 +29,8 @@ func NewProducer(cfg Config) (*Producer, error) {
 	}, nil
 }
 
+// Produce ставит запись в очередь отправки и возвращается сразу: результат
+// уезжает в лог. Нужен там, где поток записей важнее судьбы каждой из них
 func (p *Producer) Produce(parentCtx context.Context, record *kgo.Record) {
 	// Убираем возможность отмены, чтоб не обрубать отправку записи при shutdown
 	// То, что мы не зависнем гарантирует RecordDeliveryTimeout, который обязательно выставлять
@@ -52,7 +54,7 @@ func (p *Producer) Produce(parentCtx context.Context, record *kgo.Record) {
 	})
 }
 
-// Блокируется до подтверждения записи брокером.
+// ProduceSync блокируется до подтверждения записей брокером.
 // Нужен там, где нельзя двигаться дальше, пока запись не сохранена (например DLQ).
 //
 // В отличие от [Producer.Produce] контекст не отвязывается от отмены:
@@ -106,7 +108,7 @@ func Permanent(err error) bool {
 	return errors.As(err, &kerror) && !kerr.IsRetriable(err)
 }
 
-// Блокируется пока не обработаются все записи из буффера
+// Flush блокируется, пока не отправятся все записи из буфера
 // или не отменится контекст
 func (p *Producer) Flush(ctx context.Context) error {
 	if err := p.client.Flush(ctx); err != nil {
@@ -115,7 +117,8 @@ func (p *Producer) Flush(ctx context.Context) error {
 	return nil
 }
 
-// Вызывает [Flush] чтоб гарантировать обработку всех событий в памяти
+// Close флашит буфер ([Producer.Flush]) и закрывает клиент: так записи,
+// которые лежали в памяти, не теряются на остановке сервиса
 func (p *Producer) Close(ctx context.Context) error {
 	defer p.client.Close()
 

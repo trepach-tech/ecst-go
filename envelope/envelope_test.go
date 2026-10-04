@@ -118,8 +118,8 @@ func TestHeaders(t *testing.T) {
 		WithTraceID("trace-1").
 		Headers()
 
-	if h[HeaderEnvelopeType] != "order" {
-		t.Fatalf("%s = %q, want %q", HeaderEnvelopeType, h[HeaderEnvelopeType], "order")
+	if h[HeaderEntityType] != "order" {
+		t.Fatalf("%s = %q, want %q", HeaderEntityType, h[HeaderEntityType], "order")
 	}
 	if h[HeaderTraceID] != "trace-1" {
 		t.Fatalf("%s = %q, want %q", HeaderTraceID, h[HeaderTraceID], "trace-1")

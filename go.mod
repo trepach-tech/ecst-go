@@ -1,6 +1,6 @@
 module github.com/giicoo/ecst-go
 
-go 1.27
+go 1.26.0
 
 require (
 	github.com/twmb/franz-go v1.22.0

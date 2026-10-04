@@ -79,8 +79,8 @@ func (c Config) Delay(attempt int) time.Duration {
 	return time.Duration(d)
 }
 
-// Wait ждет [Config.Delay] или отмену ctx
-func (c Config) Wait(ctx context.Context, attempt int) error {
+// wait ждет [Config.Delay] или отмену ctx
+func (c Config) wait(ctx context.Context, attempt int) error {
 	t := time.NewTimer(c.Delay(attempt))
 	defer t.Stop()
 

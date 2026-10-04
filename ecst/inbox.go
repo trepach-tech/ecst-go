@@ -47,7 +47,10 @@ func newInboxWorker(cfg *InboxConfig, p *producer.Producer, log *slog.Logger) (*
 			w.consumers = append(w.consumers, c)
 		}
 
-		log.Info("inbox: topic registered", slog.String("topic", topic), slog.Int("pool_size", size))
+		log.LogAttrs(context.Background(), slog.LevelInfo, "inbox: topic registered",
+			slog.String("topic", topic),
+			slog.Int("pool_size", size),
+		)
 	}
 
 	return w, nil

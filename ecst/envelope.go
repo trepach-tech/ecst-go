@@ -63,14 +63,11 @@ func decode[T any](h Handler[T]) consumer.Handler {
 		// кладем запись в ctx, чтоб не тащить ее в сигнатуру каждого хендлера
 		ctx = withRecord(ctx, r)
 
-		raw, err := envelope.DecodeRaw(r.Value)
+		// Разбор сразу в T, а не через [envelope.Raw]: иначе один и тот же
+		// конверт пришлось бы разбирать и валидировать дважды на каждую запись
+		e, err := envelope.Decode[T](r.Value)
 		if err != nil {
-			return fmt.Errorf("ecst: decode: %w: %w", err, consumer.ErrPermanent)
-		}
-
-		e, err := envelope.FromRaw[T](raw)
-		if err != nil {
-			return fmt.Errorf("ecst: payload: %w: %w", err, consumer.ErrPermanent)
+			return fmt.Errorf("ecst: %w: %w", err, consumer.ErrPermanent)
 		}
 
 		return h(ctx, e)
@@ -113,7 +110,7 @@ func withRecord(ctx context.Context, r *kgo.Record) context.Context {
 // офсет и заголовки. Нужна для логов и трейсинга - обрабатывать событие
 // по ней не надо.
 //
-// ok == false, если ctx не из хендлера, зарегистрированного через [Handle]
+// ok == false, если ctx не из хендлера, зарегистрированного через [Topic]
 func RecordFrom(ctx context.Context) (r *kgo.Record, ok bool) {
 	r, ok = ctx.Value(recordKey{}).(*kgo.Record)
 

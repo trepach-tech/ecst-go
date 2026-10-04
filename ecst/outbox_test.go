@@ -140,8 +140,8 @@ func TestRecordFromEnvelope(t *testing.T) {
 		headers[h.Key] = string(h.Value)
 	}
 
-	if headers[envelope.HeaderEnvelopeType] != "order" {
-		t.Errorf("%s = %q, want %q", envelope.HeaderEnvelopeType, headers[envelope.HeaderEnvelopeType], "order")
+	if headers[envelope.HeaderEntityType] != "order" {
+		t.Errorf("%s = %q, want %q", envelope.HeaderEntityType, headers[envelope.HeaderEntityType], "order")
 	}
 
 	if headers[envelope.HeaderTraceID] != "trace-1" {
