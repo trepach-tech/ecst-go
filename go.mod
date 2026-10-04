@@ -1,4 +1,4 @@
-module github.com/giicoo/ecst-go
+module github.com/trepach-tech/ecst-go
 
 go 1.26.0
 
