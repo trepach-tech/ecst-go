@@ -6,10 +6,11 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/trepach-tech/ecst-go/backoff"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 	"github.com/twmb/franz-go/plugin/kslog"
+
+	"github.com/trepach-tech/ecst-go/backoff"
 )
 
 // С какого офсета читать партицию, если у группы нет закоммиченного офсета

@@ -10,11 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/kmsg"
+
 	"github.com/trepach-tech/ecst-go/backoff"
 	"github.com/trepach-tech/ecst-go/consumer"
 	"github.com/trepach-tech/ecst-go/envelope"
-	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 // Тесты требуют живого брокера: весь смысл модуля - в том, что события

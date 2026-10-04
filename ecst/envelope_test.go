@@ -5,9 +5,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/twmb/franz-go/pkg/kgo"
+
 	"github.com/trepach-tech/ecst-go/consumer"
 	"github.com/trepach-tech/ecst-go/envelope"
-	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // encode - конверт как он лежит в топике

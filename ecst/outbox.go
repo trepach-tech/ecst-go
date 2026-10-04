@@ -7,10 +7,11 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kgo"
+
 	"github.com/trepach-tech/ecst-go/backoff"
 	"github.com/trepach-tech/ecst-go/envelope"
 	"github.com/trepach-tech/ecst-go/producer"
-	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // OutboxMessage - строка outbox-таблицы, готовая к публикации.

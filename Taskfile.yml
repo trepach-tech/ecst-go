@@ -1,6 +1,8 @@
 version: "3"
 
 vars:
+  MODULES: "."
+  MODULE_PREFIX: "github.com/trepach-tech/ecst-go"
   BIN_DIR: "{{.ROOT_DIR}}/bin"
   GOLANGCI_LINT: "{{.BIN_DIR}}/golangci-lint"
   GCI: "{{.BIN_DIR}}/gci"
@@ -24,7 +26,7 @@ tasks:
     deps: [install-formatters]
     cmds:
       - find {{.MODULES}} -type f -name '*.go' ! -path '*/vendor/*' -exec {{.GOFUMPT}} -w {} +
-      - find {{.MODULES}} -type f -name '*.go' ! -path '*/vendor/*' -exec {{.GCI}} write -s standard -s default -s "prefix(trepach-tech)" {} +
+      - find {{.MODULES}} -type f -name '*.go' ! -path '*/vendor/*' -exec {{.GCI}} write -s standard -s default -s "prefix({{.MODULE_PREFIX}})" {} +
 
   # ─── Линтер ───────────────────────────────────────────────────
 

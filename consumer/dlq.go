@@ -7,8 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/trepach-tech/ecst-go/producer"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/trepach-tech/ecst-go/producer"
 )
 
 // Заголовки, которые [KafkaDLQ] добавляет к записи:

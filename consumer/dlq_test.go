@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trepach-tech/ecst-go/backoff"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/trepach-tech/ecst-go/backoff"
 )
 
 // fakeDLQ считает отправки и умеет падать.

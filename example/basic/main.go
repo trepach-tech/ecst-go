@@ -23,9 +23,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kgo"
+
 	"github.com/trepach-tech/ecst-go/consumer"
 	"github.com/trepach-tech/ecst-go/producer"
-	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 const (
