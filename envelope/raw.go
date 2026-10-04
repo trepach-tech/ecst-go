@@ -7,9 +7,11 @@ import (
 
 // Raw - конверт с неразобранным payload.
 //
-// Нужен там, где тип payload еще неизвестен: на транспорте лежат события
-// разных сущностей, и разбирать их можно только зная топик или EntityType.
-// Остальные поля конверта при этом доступны как обычно
+// Нужен там, где тип payload еще неизвестен: в outbox-таблице и на транспорте
+// лежат события разных сущностей, и разбирать их можно только зная топик
+// или EntityType. Остальные поля конверта при этом доступны как обычно.
+//
+// Это псевдоним, поэтому Raw отдает и [Decode] с json.RawMessage
 type Raw = Envelope[json.RawMessage]
 
 // ToRaw прячет payload в JSON, оставляя конверт нетронутым.
@@ -76,9 +78,4 @@ func FromRaw[T any](raw Raw) (Envelope[T], error) {
 	}
 
 	return e, nil
-}
-
-// DecodeRaw разбирает конверт, не зная типа payload
-func DecodeRaw(raw []byte) (Raw, error) {
-	return Decode[json.RawMessage](raw)
 }

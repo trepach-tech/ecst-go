@@ -100,16 +100,6 @@ func (c *InboxConfig) Register(regs ...Registration) {
 	}
 }
 
-// Topics возвращает зарегистрированные топики
-func (c *InboxConfig) Topics() []string {
-	topics := make([]string, 0, len(c.handlers))
-	for t := range c.handlers {
-		topics = append(topics, t)
-	}
-
-	return topics
-}
-
 // DefaultOutboxConfig возвращает конфиг outbox-воркера с разумными значениями
 func DefaultOutboxConfig(store OutboxStore, brokers ...string) *OutboxConfig {
 	p := producer.DefaultConfig(brokers...)
@@ -181,7 +171,7 @@ func (c *OutboxConfig) validate() error {
 	if err := c.Backoff.Validate(); err != nil {
 		errs = append(errs, fmt.Errorf("outbox: %w", err))
 	}
-	if err := c.Producer.ValidateProducer(); err != nil {
+	if err := c.Producer.Validate(); err != nil {
 		errs = append(errs, fmt.Errorf("outbox: %w", err))
 	}
 
@@ -217,7 +207,7 @@ func (c *InboxConfig) validate() error {
 		}
 	}
 
-	if err := c.Producer.ValidateProducer(); err != nil {
+	if err := c.Producer.Validate(); err != nil {
 		errs = append(errs, fmt.Errorf("inbox: %w", err))
 	}
 

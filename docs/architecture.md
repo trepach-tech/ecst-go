@@ -30,7 +30,7 @@
 - `producer`, `consumer` — транспорт поверх `franz-go`;
 - `ecst` — собирает все вместе в `Service`.
 
-Пакеты `producer` и `consumer` используются и самостоятельно, без `ecst` — см. `example/basic`.
+Пакеты `producer` и `consumer` используются и самостоятельно, без `ecst` — см. [`example/basic`](../example/basic).
 
 ## Почему именно так
 

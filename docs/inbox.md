@@ -163,7 +163,7 @@ dlq, err := consumer.NewKafkaDLQ(producer, "orders.dlq")
 | `dlq_error` | текст ошибки |
 | `dlq_time` | момент отправки, RFC3339 |
 
-Исходные заголовки записи сохраняются — `envelope_type` и `trace_id` остаются на месте.
+Исходные заголовки записи сохраняются — `entity_type` и `trace_id` остаются на месте.
 
 Интерфейс свой, если DLQ нужна не в Kafka:
 

@@ -132,8 +132,8 @@ func DefaultConfig(brokers ...string) Config {
 	}
 }
 
-// ValidateProducer проверяет конфиг и возвращает все найденные проблемы разом.
-func (c Config) ValidateProducer() error {
+// Validate проверяет конфиг и возвращает все найденные проблемы разом
+func (c Config) Validate() error {
 	var errs []error
 	add := func(msg string) { errs = append(errs, errors.New("config: "+msg)) }
 
@@ -197,8 +197,8 @@ func (c Config) ValidateProducer() error {
 	return errors.Join(errs...)
 }
 
-// Перевод [Config] в [kgo.Opt]
-func (c Config) ProducerOpts() []kgo.Opt {
+// opts - перевод [Config] в опции клиента
+func (c Config) opts() []kgo.Opt {
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(c.Brokers...),
 		kgo.ClientID(c.ClientID),

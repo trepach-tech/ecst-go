@@ -5,6 +5,13 @@ import (
 	"errors"
 )
 
+// ErrPermanent - ошибка, которую бессмысленно повторять: битый формат,
+// нарушение констрейнта, чужая схема.
+//
+// Вызывающий оборачивает ее (fmt.Errorf("parse: %w", backoff.ErrPermanent)),
+// и [Retry.Do] обрывает повторы сразу, не тратя попытки и паузы
+var ErrPermanent = errors.New("permanent error")
+
 // Retry - повтор операции с задержкой между попытками.
 //
 // Сам по себе повтор без задержки бесполезен: все попытки выгорают
@@ -13,13 +20,14 @@ type Retry struct {
 	// Задержка между попытками
 	Config
 
-	// Сколько раз пытаться всего. 1 - без повторов
+	// Сколько раз пытаться всего. 1 и меньше - без повторов
 	Attempts int
 
-	// Ошибки, на которых повторять бессмысленно: битый формат,
-	// нарушение констрейнта, чужая схема.
+	// Ошибки, на которых повторять бессмысленно, помимо [ErrPermanent]:
+	// им классифицируют чужие ошибки, которые про этот сентинел не знают -
+	// например окончательный отказ брокера.
 	//
-	// nil - повторяются все
+	// nil - повторяется все, кроме [ErrPermanent]
 	Permanent func(error) bool
 
 	// Вызывается перед каждой задержкой: место для лога.
@@ -29,34 +37,24 @@ type Retry struct {
 	OnRetry func(attempt int, err error)
 }
 
-// Validate проверяет конфиг и возвращает все найденные проблемы разом
-func (r Retry) Validate() error {
-	var errs []error
-
-	if r.Attempts <= 0 {
-		errs = append(errs, errors.New("retry: Attempts must be > 0"))
-	}
-	if err := r.Config.Validate(); err != nil {
-		errs = append(errs, err)
-	}
-
-	return errors.Join(errs...)
-}
-
 // Do повторяет op, пока она не пройдет или не кончатся попытки.
 //
-// Возвращает ошибку последней попытки. Прерывается сразу на [Retry.Permanent]
-// и на отмене ctx: отмена во время ожидания - штатная остановка,
+// Возвращает ошибку последней попытки. Прерывается сразу на [ErrPermanent],
+// на [Retry.Permanent] и на отмене ctx: отмена во время ожидания - штатная остановка,
 // и она приезжает вместе с исходной ошибкой
 func (r Retry) Do(ctx context.Context, op func() error) error {
 	var err error
 
-	for attempt := 1; attempt <= r.Attempts; attempt++ {
+	// Нулевой Attempts - это забытое поле, а не "не вызывать op":
+	// молча вернуть nil, не сделав работу, хуже любой ошибки
+	attempts := max(r.Attempts, 1)
+
+	for attempt := 1; attempt <= attempts; attempt++ {
 		if err = op(); err == nil {
 			return nil
 		}
 
-		if attempt == r.Attempts || (r.Permanent != nil && r.Permanent(err)) {
+		if attempt == attempts || r.permanent(err) {
 			break
 		}
 
@@ -64,10 +62,15 @@ func (r Retry) Do(ctx context.Context, op func() error) error {
 			r.OnRetry(attempt, err)
 		}
 
-		if waitErr := r.Wait(ctx, attempt); waitErr != nil {
+		if waitErr := r.wait(ctx, attempt); waitErr != nil {
 			return errors.Join(err, waitErr)
 		}
 	}
 
 	return err
+}
+
+// permanent - стоит ли вообще повторять эту ошибку
+func (r Retry) permanent(err error) bool {
+	return errors.Is(err, ErrPermanent) || (r.Permanent != nil && r.Permanent(err))
 }

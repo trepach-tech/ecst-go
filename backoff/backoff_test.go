@@ -117,7 +117,7 @@ func TestDefaultConfigIsValid(t *testing.T) {
 func TestWait(t *testing.T) {
 	c := Config{Min: time.Millisecond, Max: time.Millisecond, Factor: 1}
 
-	if err := c.Wait(context.Background(), 1); err != nil {
+	if err := c.wait(context.Background(), 1); err != nil {
 		t.Fatalf("wait: %v", err)
 	}
 }
@@ -131,7 +131,7 @@ func TestWaitCanceled(t *testing.T) {
 
 	start := time.Now()
 
-	err := c.Wait(ctx, 1)
+	err := c.wait(ctx, 1)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}

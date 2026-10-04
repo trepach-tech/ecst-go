@@ -6,13 +6,17 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/giicoo/ecst-go/backoff"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // ErrPermanent - ошибка, которую бессмысленно повторять: битый формат, чужая схема.
 // Хендлер оборачивает ее (fmt.Errorf("parse: %w", consumer.ErrPermanent)),
-// и запись уезжает в DLQ сразу, без ретраев и пауз
-var ErrPermanent = errors.New("permanent error")
+// и запись уезжает в DLQ сразу, без ретраев и пауз.
+//
+// Тот же сентинел, что [backoff.ErrPermanent]: повторы обрывает он сам,
+// независимо от того, кто их крутит - консьюмер или outbox-воркер
+var ErrPermanent = backoff.ErrPermanent
 
 // Handler обрабатывает одну запись.
 //
@@ -38,7 +42,7 @@ type Consumer struct {
 }
 
 func NewConsumer(cfg Config, handler Handler) (*Consumer, error) {
-	if err := cfg.ValidateConsumer(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("consumer: %w", err)
 	}
 	if handler == nil {
@@ -51,7 +55,7 @@ func NewConsumer(cfg Config, handler Handler) (*Consumer, error) {
 	// пул цепляется к клиенту через callback'и ребаланса.
 	// revoked и lost делают одно и то же: в обоих случаях партиция больше
 	// не наша и воркера надо остановить
-	opts := append(cfg.ConsumerOpts(),
+	opts := append(cfg.opts(),
 		kgo.OnPartitionsAssigned(split.assigned),
 		kgo.OnPartitionsRevoked(split.lost),
 		kgo.OnPartitionsLost(split.lost),
@@ -78,7 +82,7 @@ func (c *Consumer) Run(ctx context.Context) {
 	slog.LogAttrs(ctx, slog.LevelInfo, "consumer: stopped", slog.Any("reason", ctx.Err()))
 }
 
-// Закрывает клиент и выходит из группы, чтоб партиции сразу разъехались
+// Close закрывает клиент и выходит из группы, чтоб партиции сразу разъехались
 // по живым консьюмерам, не дожидаясь SessionTimeout.
 //
 // Выход из группы дергает callback ребаланса, а тот дожидается, пока воркеры

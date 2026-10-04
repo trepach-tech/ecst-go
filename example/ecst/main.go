@@ -4,15 +4,15 @@
 // Нужен запущенный брокер и созданные топики:
 //
 //	docker compose up -d
-//	docker compose exec broker /opt/kafka/bin/kafka-topics.sh \
-//		--bootstrap-server localhost:9092 --create --if-not-exists \
-//		--topic orders --partitions 3
-//	docker compose exec broker /opt/kafka/bin/kafka-topics.sh \
-//		--bootstrap-server localhost:9092 --create --if-not-exists \
-//		--topic users --partitions 3
+//	for t in orders orders.dlq users users.dlq; do
+//		docker compose exec broker /opt/kafka/bin/kafka-topics.sh \
+//			--bootstrap-server localhost:9092 --create --if-not-exists \
+//			--topic "$t" --partitions 3
+//	done
 //
 // Топики нужны заранее: автосоздание у брокера выключено, а без топика
-// ProduceSync роняет весь батч, и вместе с ним - строки, которым топик есть
+// ProduceSync роняет весь батч, и вместе с ним - строки, которым топик есть.
+// DLQ-топики нужны по той же причине: туда уезжает то, что не обработалось
 package main
 
 import (
