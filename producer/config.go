@@ -6,10 +6,11 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/giicoo/ecst-go/backoff"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 	"github.com/twmb/franz-go/plugin/kslog"
+
+	"github.com/trepach-tech/ecst-go/backoff"
 )
 
 // Сколько подтверждений записи ждать от брокера

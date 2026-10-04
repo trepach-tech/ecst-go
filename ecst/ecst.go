@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/giicoo/ecst-go/producer"
+	"github.com/trepach-tech/ecst-go/producer"
 )
 
 // Сколько ждать флаша буфера на закрытие продюсера.

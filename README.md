@@ -25,7 +25,7 @@ ECST — это способ отдавать изменения состоян�
 ## Установка
 
 ```bash
-go get github.com/giicoo/ecst-go
+go get github.com/trepach-tech/ecst-go
 ```
 
 Go 1.27+.

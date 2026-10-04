@@ -6,9 +6,10 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/giicoo/ecst-go/consumer"
-	"github.com/giicoo/ecst-go/producer"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/trepach-tech/ecst-go/consumer"
+	"github.com/trepach-tech/ecst-go/producer"
 )
 
 // inboxWorker держит по пулу консьюмеров на каждый зарегистрированный топик.

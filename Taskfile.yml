@@ -1,0 +1,49 @@
+version: "3"
+
+vars:
+  MODULES: "."
+  MODULE_PREFIX: "github.com/trepach-tech/ecst-go"
+  BIN_DIR: "{{.ROOT_DIR}}/bin"
+  GOLANGCI_LINT: "{{.BIN_DIR}}/golangci-lint"
+  GCI: "{{.BIN_DIR}}/gci"
+  GOFUMPT: "{{.BIN_DIR}}/gofumpt"
+
+tasks:
+  # ─── Форматирование ───────────────────────────────────────────
+
+  install-formatters:
+    desc: "Устанавливает gci и gofumpt в ./bin"
+    cmds:
+      - |
+        [ -f {{.GOFUMPT}} ] || GOBIN={{.BIN_DIR}} go install mvdan.cc/gofumpt@latest
+        [ -f {{.GCI}} ]     || GOBIN={{.BIN_DIR}} go install github.com/daixiang0/gci@latest
+    status:
+      - test -x {{.GOFUMPT}}
+      - test -x {{.GCI}}
+
+  format:
+    desc: "Форматирует код (gofumpt + gci) во всех модулях"
+    deps: [install-formatters]
+    cmds:
+      - find {{.MODULES}} -type f -name '*.go' ! -path '*/vendor/*' -exec {{.GOFUMPT}} -w {} +
+      - find {{.MODULES}} -type f -name '*.go' ! -path '*/vendor/*' -exec {{.GCI}} write -s standard -s default -s "prefix({{.MODULE_PREFIX}})" {} +
+
+  # ─── Линтер ───────────────────────────────────────────────────
+
+  install-golangci-lint:
+    desc: "Устанавливает golangci-lint в ./bin"
+    cmds:
+      - |
+        [ -f {{.GOLANGCI_LINT}} ] || {
+          mkdir -p {{.BIN_DIR}}
+          GOBIN={{.BIN_DIR}} go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+        }
+    status:
+      - test -x {{.GOLANGCI_LINT}}
+
+  lint:
+    desc: "Запускает golangci-lint в каждом модуле"
+    deps: [install-golangci-lint]
+    cmds:
+      - for: { var: MODULES, split: " " }
+        cmd: cd {{.ITEM}} && {{.GOLANGCI_LINT}} run ./...

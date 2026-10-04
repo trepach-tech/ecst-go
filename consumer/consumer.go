@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/giicoo/ecst-go/backoff"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/trepach-tech/ecst-go/backoff"
 )
 
 // ErrPermanent - ошибка, которую бессмысленно повторять: битый формат, чужая схема.
