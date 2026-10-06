@@ -46,7 +46,7 @@ type Envelope[T any] struct {
 	EntityID   string    `json:"entity_id"`
 	Version    int64     `json:"version"`
 	Op         Op        `json:"op"`
-	Payload    *T        `json:"event,omitempty"`
+	Payload    *T        `json:"payload,omitempty"`
 	Timestamp  time.Time `json:"timestamp"`
 	TraceID    string    `json:"trace_id,omitempty"`
 	Source     Source    `json:"source"`
