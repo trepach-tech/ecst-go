@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/giicoo/ecst-go/backoff"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/trepach-tech/ecst-go/backoff"
 )
 
 // fakeDLQ считает отправки и умеет падать.
@@ -48,7 +49,7 @@ func testProcessor(t *testing.T, dlq DLQ, handler Handler) *processor {
 	cfg.DLQ = dlq
 	cfg.Backoff = backoff.Config{Min: time.Millisecond, Max: time.Millisecond, Factor: 1, Jitter: 0}
 
-	if err := cfg.ValidateConsumer(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
 
@@ -125,7 +126,7 @@ func TestConfigRequiresDLQ(t *testing.T) {
 	cfg.Group = "g"
 	cfg.Topics = []string{"t"}
 
-	if err := cfg.ValidateConsumer(); err == nil {
+	if err := cfg.Validate(); err == nil {
 		t.Fatal("want error on nil DLQ")
 	}
 }

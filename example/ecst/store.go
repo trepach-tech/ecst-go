@@ -6,7 +6,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/giicoo/ecst-go/ecst"
+	"github.com/trepach-tech/ecst-go/ecst"
 )
 
 // memStore - реализация [ecst.OutboxStore] в памяти: хватает, чтоб увидеть

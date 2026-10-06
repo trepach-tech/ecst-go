@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/giicoo/ecst-go/envelope"
+	"github.com/trepach-tech/ecst-go/envelope"
 )
 
 // OutboxRecord — запись outbox-таблицы, содержащая

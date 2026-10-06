@@ -6,10 +6,11 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/giicoo/ecst-go/backoff"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 	"github.com/twmb/franz-go/plugin/kslog"
+
+	"github.com/trepach-tech/ecst-go/backoff"
 )
 
 // С какого офсета читать партицию, если у группы нет закоммиченного офсета
@@ -131,8 +132,8 @@ func DefaultConfig(brokers ...string) Config {
 	}
 }
 
-// ValidateConsumer проверяет конфиг и возвращает все найденные проблемы разом.
-func (c Config) ValidateConsumer() error {
+// Validate проверяет конфиг и возвращает все найденные проблемы разом
+func (c Config) Validate() error {
 	var errs []error
 	add := func(msg string) { errs = append(errs, errors.New("config: "+msg)) }
 
@@ -198,8 +199,8 @@ func (c Config) ValidateConsumer() error {
 	return errors.Join(errs...)
 }
 
-// Перевод [Config] в [kgo.Opt]
-func (c Config) ConsumerOpts() []kgo.Opt {
+// opts - перевод [Config] в опции клиента
+func (c Config) opts() []kgo.Opt {
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(c.Brokers...),
 		kgo.ClientID(c.ClientID),

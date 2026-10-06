@@ -6,15 +6,16 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/giicoo/ecst-go/backoff"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/trepach-tech/ecst-go/backoff"
 )
 
 // processor обрабатывает одну запись: ретраи с бэкоффом, а если они
 // не помогли - DLQ.
 //
-// Логика одна и та же независимо от того, кто читает партиции:
-// [Consumer] в одной горутине или пул воркеров, где на каждую партицию своя
+// Один на консьюмера и общий для всех его воркеров, поэтому состояния
+// не держит: вызывается из горутины каждой партиции
 type processor struct {
 	cfg     Config
 	handler Handler
@@ -22,10 +23,6 @@ type processor struct {
 }
 
 func newProcessor(cfg Config, handler Handler, log *slog.Logger) *processor {
-	if log == nil {
-		log = slog.Default()
-	}
-
 	return &processor{
 		cfg:     cfg,
 		handler: handler,
@@ -73,12 +70,11 @@ func (p *processor) process(ctx context.Context, r *kgo.Record) error {
 
 // retry повторяет op, логируя каждую неудачную попытку.
 //
-// Прерывается сразу на [ErrPermanent] и на отмене ctx - см. [backoff.Retry]
+// Прерывается сразу на [ErrPermanent] и на отмене ctx - см. [backoff.Retry.Do]
 func (p *processor) retry(ctx context.Context, attempts int, what string, r *kgo.Record, op func() error) error {
 	return backoff.Retry{
-		Config:    p.cfg.Backoff,
-		Attempts:  attempts,
-		Permanent: func(err error) bool { return errors.Is(err, ErrPermanent) },
+		Config:   p.cfg.Backoff,
+		Attempts: attempts,
 		OnRetry: func(attempt int, err error) {
 			p.log.LogAttrs(ctx, slog.LevelWarn, "consumer: "+what+" failed, retrying",
 				slog.String("topic", r.Topic),

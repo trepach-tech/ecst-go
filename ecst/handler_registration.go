@@ -1,7 +1,7 @@
 package ecst
 
 import (
-	"github.com/giicoo/ecst-go/consumer"
+	"github.com/trepach-tech/ecst-go/consumer"
 )
 
 // Registration — готовая привязка хендлера к топику для [InboxConfig.Register].

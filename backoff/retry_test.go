@@ -3,6 +3,7 @@ package backoff
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -121,7 +122,32 @@ func TestRetrySingleAttempt(t *testing.T) {
 	}
 }
 
-// Ошибку, которую бессмысленно повторять, не повторяем
+// [ErrPermanent] в цепочке обрывает повторы без всякой настройки
+func TestRetryErrPermanent(t *testing.T) {
+	op, calls := failing(10, fmt.Errorf("parse: %w", ErrPermanent))
+
+	var retried bool
+
+	r := Retry{
+		Config:   fast(),
+		Attempts: 5,
+		OnRetry:  func(int, error) { retried = true },
+	}
+
+	if err := r.Do(context.Background(), op); !errors.Is(err, ErrPermanent) {
+		t.Fatalf("err = %v, want to wrap ErrPermanent", err)
+	}
+
+	if *calls != 1 {
+		t.Fatalf("calls = %d, want 1", *calls)
+	}
+
+	if retried {
+		t.Fatal("OnRetry called on ErrPermanent")
+	}
+}
+
+// [Retry.Permanent] классифицирует чужие ошибки, которые про сентинел не знают
 func TestRetryPermanent(t *testing.T) {
 	errPermanent := errors.New("permanent")
 	op, calls := failing(10, errPermanent)
@@ -173,22 +199,17 @@ func TestRetryCanceled(t *testing.T) {
 	}
 }
 
-func TestRetryValidate(t *testing.T) {
-	if err := (Retry{Config: Default(), Attempts: 3}).Validate(); err != nil {
-		t.Fatalf("valid retry: %v", err)
+// Забытый Attempts не должен превращаться в "op не вызывать":
+// молча вернуть nil, не сделав работу, хуже любой ошибки
+func TestRetryZeroAttempts(t *testing.T) {
+	want := errors.New("boom")
+	op, calls := failing(10, want)
+
+	if err := (Retry{Config: fast()}).Do(context.Background(), op); !errors.Is(err, want) {
+		t.Fatalf("err = %v, want %v", err, want)
 	}
 
-	tests := map[string]Retry{
-		"zero attempts":     {Config: Default(), Attempts: 0},
-		"negative attempts": {Config: Default(), Attempts: -1},
-		"broken backoff":    {Config: Config{}, Attempts: 3},
-	}
-
-	for name, r := range tests {
-		t.Run(name, func(t *testing.T) {
-			if err := r.Validate(); err == nil {
-				t.Fatal("want error")
-			}
-		})
+	if *calls != 1 {
+		t.Fatalf("calls = %d, want 1", *calls)
 	}
 }

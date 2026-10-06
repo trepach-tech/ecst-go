@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/giicoo/ecst-go/ecst"
-	"github.com/giicoo/ecst-go/envelope"
+	"github.com/trepach-tech/ecst-go/ecst"
+	"github.com/trepach-tech/ecst-go/envelope"
 )
 
 // Сколько ждать между событиями, которые пишет бизнес-логика

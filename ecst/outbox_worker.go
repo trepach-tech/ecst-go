@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/giicoo/ecst-go/backoff"
-	"github.com/giicoo/ecst-go/consumer"
-	"github.com/giicoo/ecst-go/producer"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/trepach-tech/ecst-go/backoff"
+	"github.com/trepach-tech/ecst-go/producer"
 )
 
 // outboxWorker перекладывает строки из outbox-таблицы в Kafka
@@ -169,19 +169,14 @@ func (w *outboxWorker) publish(ctx context.Context, rows map[*kgo.Record]string,
 	return ids, failed
 }
 
-// record собирает запись из конверта.
-//
-// Ключ - EntityID: так все события одной сущности ложатся в одну партицию
-// и приезжают потребителю в порядке версий
 // retry повторяет запрос к [OutboxStore], логируя каждую неудачную попытку.
 //
-// Прерывается сразу на отмене ctx и на [consumer.ErrPermanent]: им стор
+// Прерывается сразу на отмене ctx и на [backoff.ErrPermanent]: им стор
 // сообщает, что повторять бессмысленно - нарушение констрейнта, битая схема
 func (w *outboxWorker) retry(ctx context.Context, what string, op func() error) error {
 	return backoff.Retry{
-		Config:    w.cfg.Backoff,
-		Attempts:  w.cfg.StoreMaxAttempts,
-		Permanent: func(err error) bool { return errors.Is(err, consumer.ErrPermanent) },
+		Config:   w.cfg.Backoff,
+		Attempts: w.cfg.StoreMaxAttempts,
 		OnRetry: func(attempt int, err error) {
 			w.log.LogAttrs(ctx, slog.LevelWarn, "outbox: "+what+" failed, retrying",
 				slog.Int("attempt", attempt),
@@ -215,6 +210,10 @@ func (w *outboxWorker) markFailed(parentCtx context.Context, id string, cause er
 	}
 }
 
+// record собирает запись из конверта.
+//
+// Ключ - EntityID: так все события одной сущности ложатся в одну партицию
+// и приезжают потребителю в порядке версий
 func (m OutboxRecord) record() (*kgo.Record, error) {
 	if m.Topic == "" {
 		return nil, errors.New("outbox: message topic is required")

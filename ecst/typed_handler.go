@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/giicoo/ecst-go/consumer"
-	"github.com/giicoo/ecst-go/envelope"
+	"github.com/trepach-tech/ecst-go/consumer"
+	"github.com/trepach-tech/ecst-go/envelope"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -15,22 +15,17 @@ import (
 // К нему применяются те же требования, что и к [consumer.Handler].
 type TypedHandler[T any] func(ctx context.Context, e envelope.Envelope[T]) error
 
-// decode - адаптер: приводит типизированный обработчик к [consumer.Handler].
 func decode[T any](h TypedHandler[T]) consumer.Handler {
 	return func(ctx context.Context, r *kgo.Record) error {
-		// Добавляем информацию о топике, партиции и офсете в контекст
+		// Топик, партиция и офсет в конверте не лежат, а для логов нужны:
+		// кладем запись в ctx, чтоб не тащить ее в сигнатуру каждого хендлера
 		ctx = withRecord(ctx, r)
 
-		// Ошибка оборачивается в [consumer.ErrPermanent],
-		// если повторная обработка события не приведёт к успеху.
-		raw, err := envelope.DecodeRaw(r.Value)
+		// Разбор сразу в T, а не через [envelope.Raw]: иначе один и тот же
+		// конверт пришлось бы разбирать и валидировать дважды на каждую запись
+		e, err := envelope.Decode[T](r.Value)
 		if err != nil {
-			return fmt.Errorf("ecst: decode: %w: %w", err, consumer.ErrPermanent)
-		}
-
-		e, err := envelope.FromRaw[T](raw)
-		if err != nil {
-			return fmt.Errorf("ecst: payload: %w: %w", err, consumer.ErrPermanent)
+			return fmt.Errorf("ecst: %w: %w", err, consumer.ErrPermanent)
 		}
 
 		return h(ctx, e)

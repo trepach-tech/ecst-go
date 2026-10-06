@@ -7,8 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/giicoo/ecst-go/producer"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/trepach-tech/ecst-go/producer"
 )
 
 // Заголовки, которые [KafkaDLQ] добавляет к записи:
@@ -49,8 +50,8 @@ func NewKafkaDLQ(p *producer.Producer, topic string) (*KafkaDLQ, error) {
 	}, nil
 }
 
-// Отправка синхронная: вернуться раньше, чем брокер подтвердил запись, нельзя -
-// консьюмер по возврату сразу коммитит офсет исходной записи
+// Send отправляет запись в DLQ-топик синхронно: вернуться раньше, чем брокер
+// подтвердил запись, нельзя - консьюмер по возврату сразу коммитит офсет исходной
 func (d *KafkaDLQ) Send(ctx context.Context, r *kgo.Record, cause error) error {
 	if err := d.producer.ProduceSync(ctx, d.record(r, cause)); err != nil {
 		return fmt.Errorf("dlq: %w", err)

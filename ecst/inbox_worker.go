@@ -6,9 +6,10 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/giicoo/ecst-go/consumer"
-	"github.com/giicoo/ecst-go/producer"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	"github.com/trepach-tech/ecst-go/consumer"
+	"github.com/trepach-tech/ecst-go/producer"
 )
 
 // inboxWorker держит по пулу консьюмеров на каждый зарегистрированный топик.
@@ -47,7 +48,10 @@ func newInboxWorker(cfg *InboxConfig, p *producer.Producer, log *slog.Logger) (*
 			w.consumers = append(w.consumers, c)
 		}
 
-		log.Info("inbox: topic registered", slog.String("topic", topic), slog.Int("pool_size", size))
+		log.LogAttrs(context.Background(), slog.LevelInfo, "inbox: topic registered",
+			slog.String("topic", topic),
+			slog.Int("pool_size", size),
+		)
 	}
 
 	return w, nil

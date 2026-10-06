@@ -120,9 +120,8 @@ func TestRegisterMany(t *testing.T) {
 		t.Fatalf("validate: %v", err)
 	}
 
-	topics := cfg.Topics()
-	if len(topics) != 2 {
-		t.Fatalf("topics = %v, want 2 of them", topics)
+	if len(cfg.handlers) != 2 {
+		t.Fatalf("handlers = %d, want 2", len(cfg.handlers))
 	}
 }
 

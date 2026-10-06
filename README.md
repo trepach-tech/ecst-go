@@ -25,7 +25,7 @@ ECST — это способ отдавать изменения состоян�
 ## Установка
 
 ```bash
-go get github.com/giicoo/ecst-go
+go get github.com/trepach-tech/ecst-go
 ```
 
 Go 1.27+.
@@ -178,8 +178,9 @@ type Envelope[T any] struct {
 `Validate()` возвращает **все** проблемы разом и вызывается автоматически при `Encode`, `Decode`,
 `ToRaw`, `FromRaw` — битый конверт не доедет ни до таблицы, ни до брокера, ни до хендлера.
 
-`envelope.Raw` (`Envelope[json.RawMessage]`) — конверт с неразобранным payload. Нужен там, где тип
-payload еще неизвестен: в outbox-таблице лежат события разных сущностей.
+`envelope.Raw` (псевдоним `Envelope[json.RawMessage]`) — конверт с неразобранным payload. Нужен там,
+где тип payload еще неизвестен: в outbox-таблице лежат события разных сущностей. `Decode`
+с `json.RawMessage` отдает именно его, а `FromRaw[T]` доразбирает payload, когда тип стал известен.
 
 ## Пакет `producer`
 
@@ -225,12 +226,15 @@ if err := json.Unmarshal(r.Value, &v); err != nil {
 
 ```go
 backoff.Retry{
-    Config:    backoff.Default(), // 250ms → ×2 → потолок 5s, full jitter
-    Attempts:  3,
-    Permanent: func(err error) bool { return errors.Is(err, consumer.ErrPermanent) },
-    OnRetry:   func(attempt int, err error) { slog.Warn("retry", "attempt", attempt, "error", err) },
+    Config:   backoff.Default(), // 250ms → ×2 → потолок 5s, full jitter
+    Attempts: 3,
+    OnRetry:  func(attempt int, err error) { slog.Warn("retry", "attempt", attempt, "error", err) },
 }.Do(ctx, op)
 ```
+
+`backoff.ErrPermanent` в цепочке ошибки обрывает повторы сам, без всякой настройки —
+`consumer.ErrPermanent` это он же. Поле `Permanent` нужно только для чужих ошибок, которые про
+сентинел не знают (например `producer.Permanent` для окончательных отказов брокера).
 
 Джиттер нужен, чтоб инстансы, упавшие на одной и той же ошибке, не пошли ретраить одновременно.
 
@@ -275,12 +279,20 @@ Delete — это tombstone (`deleted = true` + версия), а не `DELETE F
 
 | Пример | Что показывает |
 |---|---|
-| [`example/basic`](example/basic) | продюсер + консьюмер на сырых записях |
-| [`example/dlq`](example/dlq) | битая запись уезжает в DLQ и не останавливает поток |
+| [`example/basic`](example/basic) | продюсер + консьюмер на сырых записях; битая запись уезжает в DLQ и не останавливает поток |
 | [`example/ecst`](example/ecst) | полный цикл: outbox-таблица → Kafka → типизированные хендлеры |
+
+Автосоздание топиков у брокера выключено — примерам нужно заданное число партиций,
+поэтому топики создаются заранее (команды есть в шапке каждого примера):
 
 ```bash
 docker compose up -d
+
+for t in orders orders.dlq users users.dlq; do
+  docker compose exec broker /opt/kafka/bin/kafka-topics.sh \
+    --bootstrap-server localhost:9092 --create --if-not-exists --topic "$t" --partitions 3
+done
+
 go run ./example/ecst
 ```
 
@@ -291,3 +303,7 @@ go run ./example/ecst
 ![retry publish / retry consume](docs/diagrams/publish-consume.svg)
 
 Исходники и команда рендера — в [docs/architecture.md](docs/architecture.md#диаграммы).
+
+## Лицензия
+
+[MIT](LICENSE)
