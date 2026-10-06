@@ -78,7 +78,6 @@ func (pc *pconsumer) consume(ctx context.Context) {
 			for _, rec := range recs {
 				// Партицию отобрали - бросаем батч недоделанным.
 				// Он не коммитится и перечитается новым владельцем,
-				// а ребаланс не ждет, пока мы дожуем все записи с ретраями
 				select {
 				case <-pc.quit:
 					return

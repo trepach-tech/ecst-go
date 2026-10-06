@@ -23,8 +23,9 @@ const closeTimeout = 30 * time.Second
 
 // Service - собранный ECST-модуль: подключенные воркеры со своими продюсерами
 type Service struct {
-	// Клиенты, которые поднял сам сервис: их же и закрывает.
-	// У каждой части свой, общего продюсера нет
+	// producers — продюсеры, которыми владеет сервис.
+	// Сервис отвечает за их создание и закрытие.
+	// Каждый worker (outboxWorker и inboxWorker) использует свой продюсер; общего продюсера нет.
 	producers []*producer.Producer
 
 	outbox *outboxWorker
@@ -32,8 +33,7 @@ type Service struct {
 	log    *slog.Logger
 }
 
-// New поднимает клиентов по конфигу, но ничего не читает и не пишет
-// до вызова [Service.Run]
+// New создаёт клиентов по конфигу, но ничего не читает и не пишет до вызова [Service.Run].
 func New(cfg Config) (*Service, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("ecst: %w", err)
@@ -72,7 +72,8 @@ func New(cfg Config) (*Service, error) {
 	return s, nil
 }
 
-// newProducer поднимает клиент и берет его на себя: закроет [Service.Close]
+// newProducer создаёт [producer.Producer] и передаёт его во владение Service.
+// Service закроет [producer.Producer] при вызове [Service.Close].
 func (s *Service) newProducer(cfg producer.Config) (*producer.Producer, error) {
 	p, err := producer.NewProducer(cfg)
 	if err != nil {
@@ -84,10 +85,11 @@ func (s *Service) newProducer(cfg producer.Config) (*producer.Producer, error) {
 	return p, nil
 }
 
-// OutboxProducer отдает продюсер outbox-воркера: им пишут события мимо
-// outbox-таблицы (например, в тестах или в служебные топики).
+// OutboxProducer возвращает продюсер outbox-воркера для прямой публикации
+// в Kafka без записи события в outbox-таблицу (например, в тестах
+// или при публикации в служебные топики).
 //
-// nil, если Outbox не подключен
+// nil, если Outbox не подключен.
 func (s *Service) OutboxProducer() *producer.Producer {
 	if s.outbox == nil {
 		return nil
@@ -122,9 +124,11 @@ func (s *Service) Run(ctx context.Context) {
 	wg.Wait()
 }
 
-// Close гасит консьюмеров и флашит продюсеров. Вызывать после возврата из Run.
+// Close останавливает консьюмеров и флашит продюсеров.
+// Вызывать после возврата из Run.
 //
-// Продюсеры закрываются последними: через них уходят DLQ-записи консьюмеров
+// Продюсеры закрываются последними: через них консьюмеры отправляют
+// сообщения в DLQ.
 func (s *Service) Close(ctx context.Context) {
 	if s.inbox != nil {
 		s.inbox.closeAll()

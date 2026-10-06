@@ -110,13 +110,13 @@ type roundStore struct {
 }
 
 type storeRow struct {
-	msg    OutboxMessage
+	msg    OutboxRecord
 	sent   bool
 	failed bool
 	cause  error
 }
 
-func newRoundStore(msgs ...OutboxMessage) *roundStore {
+func newRoundStore(msgs ...OutboxRecord) *roundStore {
 	s := &roundStore{rows: make([]storeRow, 0, len(msgs))}
 	for _, m := range msgs {
 		s.rows = append(s.rows, storeRow{msg: m})
@@ -125,11 +125,11 @@ func newRoundStore(msgs ...OutboxMessage) *roundStore {
 	return s
 }
 
-func (s *roundStore) Fetch(_ context.Context, limit int) ([]OutboxMessage, error) {
+func (s *roundStore) Fetch(_ context.Context, limit int) ([]OutboxRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	msgs := make([]OutboxMessage, 0, limit)
+	msgs := make([]OutboxRecord, 0, limit)
 
 	for _, r := range s.rows {
 		if r.sent || r.failed || len(msgs) == limit {
@@ -240,14 +240,14 @@ func runService(t *testing.T, cfg Config) *Service {
 	return svc
 }
 
-func outboxMessage(t *testing.T, id, topic string, version int64) OutboxMessage {
+func outboxMessage(t *testing.T, id, topic string, version int64) OutboxRecord {
 	t.Helper()
 
 	e := envelope.New("order", "order-1", version, envelope.OpUpdate, &order{Sum: 100 * int(version)}).
 		WithSource("orders-service", "v1").
 		WithTraceID(fmt.Sprintf("trace-%d", version))
 
-	msg, err := NewOutboxMessage(id, topic, e)
+	msg, err := NewOutboxRecordFromEnvelope(id, topic, e)
 	if err != nil {
 		t.Fatalf("new outbox message: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestIntegrationOutboxToInbox(t *testing.T) {
 
 	const events = 5
 
-	msgs := make([]OutboxMessage, 0, events)
+	msgs := make([]OutboxRecord, 0, events)
 	for i := 1; i <= events; i++ {
 		msgs = append(msgs, outboxMessage(t, fmt.Sprintf("row-%d", i), topic, int64(i)))
 	}

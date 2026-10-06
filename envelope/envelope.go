@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Заголовки записи, которые дублируют поля конверта
+// Заголовки сообщения kafka
 const (
 	HeaderEntityType = "entity_type"
 	HeaderTraceID    = "trace_id"
@@ -46,7 +46,7 @@ type Envelope[T any] struct {
 	EntityID   string    `json:"entity_id"`
 	Version    int64     `json:"version"`
 	Op         Op        `json:"op"`
-	Payload    *T        `json:"payload,omitempty"`
+	Payload    *T        `json:"event,omitempty"`
 	Timestamp  time.Time `json:"timestamp"`
 	TraceID    string    `json:"trace_id,omitempty"`
 	Source     Source    `json:"source"`

@@ -67,7 +67,7 @@ func emitEvents(ctx context.Context, store *memStore) {
 // тип payload у каждого события свой
 func add[T any](store *memStore, id, topic string, e envelope.Envelope[T]) {
 	// ID строки в таблице. В боевом коде его выдает БД
-	msg, err := ecst.NewOutboxMessage(id, topic, e)
+	msg, err := ecst.NewOutboxRecordFromEnvelope(id, topic, e)
 	if err != nil {
 		slog.Error("build outbox message", "id", id, "error", err)
 

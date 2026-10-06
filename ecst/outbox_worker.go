@@ -10,55 +10,8 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/trepach-tech/ecst-go/backoff"
-	"github.com/trepach-tech/ecst-go/envelope"
 	"github.com/trepach-tech/ecst-go/producer"
 )
-
-// OutboxMessage - строка outbox-таблицы, готовая к публикации.
-//
-// Все, что уходит в Kafka, - это [envelope.Envelope]: ключ, значение
-// и заголовки записи собираются из него, наружу они не торчат
-type OutboxMessage struct {
-	// Идентификатор строки, по нему же идет MarkSent
-	ID string
-
-	// Топик, в который уходит событие. В конверте его нет:
-	// это маршрутизация транспорта, а не часть события
-	Topic string
-
-	// Событие. Тип payload здесь неизвестен - в таблице лежат
-	// события разных сущностей
-	Event envelope.Raw
-}
-
-// OutboxStore - доступ к outbox-таблице.
-//
-// Реализация живет на стороне приложения: только оно знает свою схему и БД
-type OutboxStore interface {
-	// Fetch забирает до limit неотправленных сообщений в порядке их записи.
-	//
-	// Должен блокировать выбранные строки (SELECT ... FOR UPDATE SKIP LOCKED
-	// или флаг "в обработке"), иначе несколько инстансов сервиса опубликуют
-	// одни и те же события
-	Fetch(ctx context.Context, limit int) ([]OutboxMessage, error)
-
-	// MarkSent помечает сообщения опубликованными: удаляет строки
-	// или проставляет sent_at.
-	//
-	// Вызывается только после подтверждения записи брокером. Если упадет -
-	// сообщения уедут в Kafka повторно, поэтому потребитель обязан быть
-	// идемпотентным (at-least-once)
-	MarkSent(ctx context.Context, ids []string) error
-
-	// MarkFailed помечает строку неисправимой: битый конверт, пустой топик.
-	// Такое не лечится ретраем - схему или данные правят руками.
-	//
-	// Обязателен: без него битая строка вечно возвращалась бы из Fetch,
-	// а отметить ее отправленной нельзя - событие потерялось бы молча.
-	// Реализуют флагом failed_at + cause, отдельной таблицей-DLQ или
-	// счетчиком попыток; главное, чтоб Fetch такие строки больше не отдавал
-	MarkFailed(ctx context.Context, id string, cause error) error
-}
 
 // outboxWorker перекладывает строки из outbox-таблицы в Kafka
 type outboxWorker struct {
@@ -115,7 +68,7 @@ func (w *outboxWorker) processBatch(parentCtx context.Context) (int, error) {
 	ctx, cancel := context.WithTimeout(parentCtx, w.cfg.BatchTimeout)
 	defer cancel()
 
-	var msgs []OutboxMessage
+	var msgs []OutboxRecord
 
 	err := w.retry(ctx, "fetch", func() (err error) {
 		msgs, err = w.cfg.Store.Fetch(ctx, w.cfg.BatchSize)
@@ -261,18 +214,18 @@ func (w *outboxWorker) markFailed(parentCtx context.Context, id string, cause er
 //
 // Ключ - EntityID: так все события одной сущности ложатся в одну партицию
 // и приезжают потребителю в порядке версий
-func (m OutboxMessage) record() (*kgo.Record, error) {
+func (m OutboxRecord) record() (*kgo.Record, error) {
 	if m.Topic == "" {
 		return nil, errors.New("outbox: message topic is required")
 	}
 
 	// Encode валидирует конверт сам
-	value, err := m.Event.Encode()
+	value, err := m.RawEnvelope.Encode()
 	if err != nil {
 		return nil, fmt.Errorf("outbox: %w", err)
 	}
 
-	envHeaders := m.Event.Headers()
+	envHeaders := m.RawEnvelope.Headers()
 	headers := make([]kgo.RecordHeader, 0, len(envHeaders))
 	for k, v := range envHeaders {
 		headers = append(headers, kgo.RecordHeader{Key: k, Value: []byte(v)})
@@ -280,7 +233,7 @@ func (m OutboxMessage) record() (*kgo.Record, error) {
 
 	return &kgo.Record{
 		Topic:   m.Topic,
-		Key:     []byte(m.Event.EntityID),
+		Key:     []byte(m.RawEnvelope.EntityID),
 		Value:   value,
 		Headers: headers,
 	}, nil
