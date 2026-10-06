@@ -17,7 +17,7 @@ import (
 type fakeStore struct {
 	mu sync.Mutex
 
-	msgs []OutboxMessage
+	msgs []OutboxRecord
 
 	fetchErr      error
 	markSentErr   error
@@ -32,7 +32,7 @@ type fakeStore struct {
 	failCauses []error
 }
 
-func (f *fakeStore) Fetch(_ context.Context, limit int) ([]OutboxMessage, error) {
+func (f *fakeStore) Fetch(_ context.Context, limit int) ([]OutboxRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -117,7 +117,7 @@ var errPermanentStore = fmt.Errorf("constraint violation: %w", consumer.ErrPerma
 func TestRecordFromEnvelope(t *testing.T) {
 	e := testEnvelope(t, 7).WithTraceID("trace-1")
 
-	msg, err := NewOutboxMessage("row-1", "orders", e)
+	msg, err := NewOutboxRecordFromEnvelope("row-1", "orders", e)
 	if err != nil {
 		t.Fatalf("new outbox message: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestNewOutboxMessageErrors(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			if _, err := NewOutboxMessage(tt.id, tt.topic, tt.e); err == nil {
+			if _, err := NewOutboxRecordFromEnvelope(tt.id, tt.topic, tt.e); err == nil {
 				t.Fatal("want error")
 			}
 		})
@@ -185,7 +185,7 @@ func TestNewOutboxMessageErrors(t *testing.T) {
 
 // Строка без топика в запись не собирается: публиковать ее некуда
 func TestRecordWithoutTopic(t *testing.T) {
-	msg, err := NewOutboxMessage("row-1", "orders", testEnvelope(t, 1))
+	msg, err := NewOutboxRecordFromEnvelope("row-1", "orders", testEnvelope(t, 1))
 	if err != nil {
 		t.Fatalf("new outbox message: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestProcessBatchFetchFails(t *testing.T) {
 // Ни одна строка не собралась в запись: публиковать нечего, все уехали
 // в MarkFailed. До продюсера (в тесте его нет) дело не доходит
 func TestProcessBatchAllBroken(t *testing.T) {
-	store := &fakeStore{msgs: []OutboxMessage{{ID: "row-1"}, {ID: "row-2"}}}
+	store := &fakeStore{msgs: []OutboxRecord{{ID: "row-1"}, {ID: "row-2"}}}
 	w := testWorker(t, store)
 
 	sent, err := w.processBatch(context.Background())

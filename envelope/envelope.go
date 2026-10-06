@@ -7,13 +7,12 @@ import (
 	"time"
 )
 
-// Record headers
+// Заголовки сообщения kafka
 const (
 	HeaderEnvelopeType string = "envelope_type"
 	HeaderTraceID      string = "trace_id"
 )
 
-// Type of operation
 type Op string
 
 func (o Op) known() bool {
@@ -25,36 +24,44 @@ func (o Op) known() bool {
 	return false
 }
 
-// hasPayload tells whether the operation must carry a payload.
-// Delete only states the entity is gone, its state is no longer meaningful
-func (o Op) hasPayload() bool { return o != OpDelete }
+// hasPayload определяет, содержит ли операция payload.
+func (o Op) hasPayload() bool {
+	// Все операции кроме [OpDelete] имеют payload
+	return o != OpDelete
+}
 
 const (
-	OpCreate Op = "c" // create
-	OpUpdate Op = "u" // update
-	OpDelete Op = "d" // delete
-	OpRead   Op = "r" // read
+	OpCreate Op = "c"
+	OpRead   Op = "r"
+	OpUpdate Op = "u"
+	OpDelete Op = "d"
 )
 
-// Envelope for event
+// Envelope - представляет событие и его метаданные.
 type Envelope[T any] struct {
 	EntityType string    `json:"entity_type"`
 	EntityID   string    `json:"entity_id"`
 	Version    int64     `json:"version"`
 	Op         Op        `json:"op"`
-	Payload    *T        `json:"payload,omitempty"`
+	Payload    *T        `json:"event,omitempty"`
 	Timestamp  time.Time `json:"timestamp"`
 	TraceID    string    `json:"trace_id,omitempty"`
 	Source     Source    `json:"source"`
 }
 
-// Who produced the event and by which schema version
+// Source - кто создал событие и по какой версии схемы
 type Source struct {
 	Service   string `json:"service"`
 	SchemaVer string `json:"schema_ver"`
 }
 
-func New[T any](entityType, entityID string, version int64, op Op, payload *T) Envelope[T] {
+func New[T any](
+	entityType string,
+	entityID string,
+	version int64,
+	op Op,
+	payload *T,
+) Envelope[T] {
 	return Envelope[T]{
 		EntityType: entityType,
 		EntityID:   entityID,
@@ -65,8 +72,8 @@ func New[T any](entityType, entityID string, version int64, op Op, payload *T) E
 	}
 }
 
-// WithSource fills [Source]. Without it a consumer cannot tell
-// who sent the event and how to read its payload
+// WithSource заполняет [Source]. Без него потребитель не сможет определить,
+// кто отправил событие и как прочитать его payload.
 func (e Envelope[T]) WithSource(service, schemaVer string) Envelope[T] {
 	e.Source = Source{Service: service, SchemaVer: schemaVer}
 
