@@ -75,8 +75,8 @@ func inbox() *ecst.InboxConfig {
 	// сразу, без ретраев. Второй аргумент - размер пула консьюмеров
 	// на топик, 0 - взять InboxConfig.PoolSize
 	cfg.Register(
-		ecst.Topic(ordersTopic, 2, handleOrder),
-		ecst.Topic(usersTopic, 0, handleUser),
+		ecst.RegisterTypedHandler(ordersTopic, 2, handleOrder),
+		ecst.RegisterTypedHandler(usersTopic, 0, handleUser),
 	)
 
 	return cfg
