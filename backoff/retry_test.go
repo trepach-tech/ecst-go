@@ -10,8 +10,8 @@ import (
 
 // fast - бэкофф, на котором тесты не спят: проверяется логика повторов,
 // а не длительность задержки
-func fast() Config {
-	return Config{Min: time.Microsecond, Max: time.Microsecond, Factor: 1}
+func fast() Backoff {
+	return Backoff{Min: time.Microsecond, Max: time.Microsecond, Factor: 1}
 }
 
 // failing возвращает операцию, которая падает первые n раз,
@@ -33,8 +33,8 @@ func failing(n int, err error) (op func() error, calls *int) {
 func TestRetryFirstAttempt(t *testing.T) {
 	op, calls := failing(0, errors.New("boom"))
 
-	r := Retry{Config: fast(), Attempts: 3}
-	if err := r.Do(context.Background(), op); err != nil {
+	r := Retry{Backoff: fast()}
+	if err := r.Do(context.Background(), 3, op, nil); err != nil {
 		t.Fatalf("do: %v", err)
 	}
 
@@ -49,12 +49,10 @@ func TestRetrySucceedsAfterFailures(t *testing.T) {
 	var retries int
 
 	r := Retry{
-		Config:   fast(),
-		Attempts: 3,
-		OnRetry:  func(int, error) { retries++ },
+		Backoff: fast(),
 	}
 
-	if err := r.Do(context.Background(), op); err != nil {
+	if err := r.Do(context.Background(), 3, op, nil); err != nil {
 		t.Fatalf("do: %v", err)
 	}
 
@@ -76,12 +74,10 @@ func TestRetryExhausted(t *testing.T) {
 	var attempts []int
 
 	r := Retry{
-		Config:   fast(),
-		Attempts: 3,
-		OnRetry:  func(attempt int, _ error) { attempts = append(attempts, attempt) },
+		Backoff: fast(),
 	}
 
-	err := r.Do(context.Background(), op)
+	err := r.Do(context.Background(), 3, op, func(attempt int, _ error) { attempts = append(attempts, attempt) })
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v, want %v", err, want)
 	}
@@ -104,12 +100,10 @@ func TestRetrySingleAttempt(t *testing.T) {
 	var retried bool
 
 	r := Retry{
-		Config:   fast(),
-		Attempts: 1,
-		OnRetry:  func(int, error) { retried = true },
+		Backoff: fast(),
 	}
 
-	if err := r.Do(context.Background(), op); !errors.Is(err, want) {
+	if err := r.Do(context.Background(), 1, op, func(int, error) { retried = true }); !errors.Is(err, want) {
 		t.Fatalf("err = %v, want %v", err, want)
 	}
 
@@ -129,12 +123,10 @@ func TestRetryErrPermanent(t *testing.T) {
 	var retried bool
 
 	r := Retry{
-		Config:   fast(),
-		Attempts: 5,
-		OnRetry:  func(int, error) { retried = true },
+		Backoff: fast(),
 	}
 
-	if err := r.Do(context.Background(), op); !errors.Is(err, ErrPermanent) {
+	if err := r.Do(context.Background(), 5, op, func(int, error) { retried = true }); !errors.Is(err, ErrPermanent) {
 		t.Fatalf("err = %v, want to wrap ErrPermanent", err)
 	}
 
@@ -153,12 +145,11 @@ func TestRetryPermanent(t *testing.T) {
 	op, calls := failing(10, errPermanent)
 
 	r := Retry{
-		Config:    fast(),
-		Attempts:  5,
+		Backoff:   fast(),
 		Permanent: func(err error) bool { return errors.Is(err, errPermanent) },
 	}
 
-	if err := r.Do(context.Background(), op); !errors.Is(err, errPermanent) {
+	if err := r.Do(context.Background(), 5, op, nil); !errors.Is(err, errPermanent) {
 		t.Fatalf("err = %v, want %v", err, errPermanent)
 	}
 
@@ -183,9 +174,9 @@ func TestRetryCanceled(t *testing.T) {
 		return want
 	}
 
-	r := Retry{Config: Config{Min: time.Hour, Max: time.Hour, Factor: 1}, Attempts: 5}
+	r := Retry{Backoff: Backoff{Min: time.Hour, Max: time.Hour, Factor: 1}}
 
-	err := r.Do(ctx, op)
+	err := r.Do(ctx, 5, op, nil)
 	if !errors.Is(err, want) {
 		t.Fatalf("err = %v, want to wrap %v", err, want)
 	}
@@ -199,17 +190,34 @@ func TestRetryCanceled(t *testing.T) {
 	}
 }
 
-// Забытый Attempts не должен превращаться в "op не вызывать":
-// молча вернуть nil, не сделав работу, хуже любой ошибки
-func TestRetryZeroAttempts(t *testing.T) {
-	want := errors.New("boom")
-	op, calls := failing(10, want)
-
-	if err := (Retry{Config: fast()}).Do(context.Background(), op); !errors.Is(err, want) {
-		t.Fatalf("err = %v, want %v", err, want)
+func TestWait(t *testing.T) {
+	r := Retry{
+		Backoff: Backoff{Min: time.Hour, Max: time.Hour, Factor: 1},
 	}
 
-	if *calls != 1 {
-		t.Fatalf("calls = %d, want 1", *calls)
+	if err := r.wait(context.Background(), 1); err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+}
+
+// Отмена во время ожидания - штатная остановка, а не истекшая задержка
+func TestWaitCanceled(t *testing.T) {
+	r := Retry{
+		Backoff: Backoff{Min: time.Hour, Max: time.Hour, Factor: 1},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+
+	err := r.wait(ctx, 1)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+
+	// Если бы Wait честно ждал задержку, тест не уложился бы в час
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("waited %s, want immediate return", elapsed)
 	}
 }

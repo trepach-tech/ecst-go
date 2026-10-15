@@ -9,11 +9,11 @@ import (
 )
 
 // OutboxMessage — запись outbox-таблицы, содержащая
-// сериализованный [envelope.Envelope] и данные маршрутизации.
+// сериализованный [message.Message] и данные маршрутизации.
 type OutboxMessage struct {
 	ID string
 
-	// Топик, в который уйдёт событие. В [envelope.Envelope] его нет:
+	// Топик, в который уйдёт событие. В [message.Message] его нет:
 	// это часть маршрутизации, а не часть события
 	Topic string
 
@@ -23,7 +23,7 @@ type OutboxMessage struct {
 
 // NewOutboxMessage собирает запись outbox-таблицы из типизированного конверта.
 func NewOutboxMessage[T any](topic string, e message.Message[T]) (OutboxMessage, error) {
-	if e.ID == "" {
+	if e.IdempotenceKey == "" {
 		return OutboxMessage{}, errors.New("ecst: outbox message id is required")
 	}
 	if topic == "" {
@@ -37,17 +37,17 @@ func NewOutboxMessage[T any](topic string, e message.Message[T]) (OutboxMessage,
 	}
 
 	return OutboxMessage{
-		ID:         e.ID,
+		ID:         e.IdempotenceKey,
 		Topic:      topic,
 		RawMessage: raw,
 	}, nil
 }
 
-// record собирает запись из конверта.
+// Record собирает запись из конверта.
 //
 // Ключ - EntityID: так все события одной сущности ложатся в одну партицию
 // и приезжают потребителю в порядке версий
-func (m OutboxMessage) record() (*kgo.Record, error) {
+func (m OutboxMessage) Record() (*kgo.Record, error) {
 	if m.Topic == "" {
 		return nil, errors.New("outbox: message topic is required")
 	}

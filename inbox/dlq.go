@@ -1,4 +1,4 @@
-package consumer
+package inbox
 
 import (
 	"context"

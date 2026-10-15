@@ -32,6 +32,8 @@ func (f *fakeDLQ) Send(context.Context, *kgo.Record, error) error {
 	return f.err
 }
 
+func (f *fakeDLQ) Close(_ context.Context) error { return nil }
+
 func (f *fakeDLQ) load() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -40,20 +42,29 @@ func (f *fakeDLQ) load() int {
 }
 
 // testProcessor собирает обработчик записей без kgo-клиента: он ему не нужен
-func testProcessor(t *testing.T, dlq DLQ, handler Handler) *processor {
+func testProcessor(t *testing.T, dlq DeadLetterSender, handler Handler) *processor {
 	t.Helper()
 
 	cfg := DefaultConfig("localhost:9092")
 	cfg.Group = "g"
-	cfg.Topics = []string{"t"}
-	cfg.DLQ = dlq
-	cfg.Backoff = backoff.Config{Min: time.Millisecond, Max: time.Millisecond, Factor: 1, Jitter: 0}
+	cfg.Topic = "t"
+	cfg.ClientBackoff = backoff.Backoff{Min: time.Millisecond, Max: time.Millisecond, Factor: 1, Jitter: 0}
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
 
-	return newProcessor(cfg, handler, slog.Default())
+	proc, _ := newProcessor(slog.Default(),
+		ProcessorConfig{
+			HandlerMaxAttempts: 1,
+			Handler:            handler,
+			DLQMaxAttempts:     1,
+			DeadLetterSender:   dlq,
+			Backoff:            backoff.Default(),
+		},
+	)
+
+	return proc
 }
 
 func record() *kgo.Record {
@@ -72,8 +83,8 @@ func TestHandleRetriesThenDLQ(t *testing.T) {
 	if err := p.process(context.Background(), record()); err != nil {
 		t.Fatalf("handle: %v", err)
 	}
-	if calls != p.cfg.HandlerMaxAttempts {
-		t.Fatalf("handler calls = %d, want %d", calls, p.cfg.HandlerMaxAttempts)
+	if calls != p.handlerAttempts {
+		t.Fatalf("handler calls = %d, want %d", calls, p.handlerAttempts)
 	}
 	if dlq.load() != 1 {
 		t.Fatalf("dlq calls = %d, want 1", dlq.load())
@@ -86,7 +97,7 @@ func TestHandlePermanentGoesStraightToDLQ(t *testing.T) {
 
 	p := testProcessor(t, dlq, func(context.Context, *kgo.Record) error {
 		calls++
-		return fmt.Errorf("parse: %w", ErrPermanent)
+		return fmt.Errorf("parse: %w", backoff.ErrPermanent)
 	})
 
 	if err := p.process(context.Background(), record()); err != nil {
@@ -110,8 +121,8 @@ func TestHandleDLQFailureStopsConsumer(t *testing.T) {
 	if err == nil {
 		t.Fatal("handle: want error")
 	}
-	if dlq.load() != p.cfg.DLQMaxAttempts {
-		t.Fatalf("dlq calls = %d, want %d", dlq.load(), p.cfg.DLQMaxAttempts)
+	if dlq.load() != p.dlqAttempts {
+		t.Fatalf("dlq calls = %d, want %d", dlq.load(), p.dlqAttempts)
 	}
 	// Причина исходного сбоя не теряется - она нужна, чтоб понять, что чинить
 	if !errors.Is(err, cause) {
@@ -124,15 +135,9 @@ func TestHandleDLQFailureStopsConsumer(t *testing.T) {
 func TestConfigRequiresDLQ(t *testing.T) {
 	cfg := DefaultConfig("localhost:9092")
 	cfg.Group = "g"
-	cfg.Topics = []string{"t"}
+	cfg.Topic = "t"
 
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("want error on nil DLQ")
-	}
-}
-
-func TestKafkaDLQValidation(t *testing.T) {
-	if _, err := NewKafkaDLQ(nil, "dlq"); err == nil {
-		t.Fatal("want error on nil producer")
 	}
 }

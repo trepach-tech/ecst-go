@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+	"uuid"
 
-	"github.com/trepach-tech/ecst-go/ecst"
-	"github.com/trepach-tech/ecst-go/envelope"
+	"github.com/trepach-tech/ecst-go/inbox"
+	"github.com/trepach-tech/ecst-go/message"
+	"github.com/trepach-tech/ecst-go/outbox"
 )
 
 // Сколько ждать между событиями, которые пишет бизнес-логика
@@ -44,7 +46,7 @@ func emitEvents(ctx context.Context, store *memStore) {
 		case <-ticker.C:
 		}
 
-		order := envelope.New("order", "order-1", version, envelope.OpUpdate, &Order{Sum: 100 * int(version)}).
+		order := message.New(uuid.New().String(), "order", "order-1", version, message.OpUpdate, &Order{Sum: 100 * int(version)}).
 			WithSource("orders-service", "v1").
 			WithTraceID(fmt.Sprintf("trace-%d", version))
 
@@ -52,11 +54,11 @@ func emitEvents(ctx context.Context, store *memStore) {
 
 		// Каждое третье изменение пользователя - удаление: у него нет payload,
 		// потому что состояния у удаленной сущности не бывает
-		user := envelope.New("user", "user-1", version, envelope.OpUpdate, &User{
+		user := message.New(uuid.New().String(), "user", "user-1", version, message.OpUpdate, &User{
 			Email: fmt.Sprintf("user-1+v%d@example.com", version),
 		})
 		if version%3 == 0 {
-			user = envelope.New[User]("user", "user-1", version, envelope.OpDelete, nil)
+			user = message.New[User](uuid.New().String(), "user", "user-1", version, message.OpDelete, nil)
 		}
 
 		add(store, fmt.Sprintf("user-row-%d", version), usersTopic, user.WithSource("users-service", "v1"))
@@ -65,9 +67,9 @@ func emitEvents(ctx context.Context, store *memStore) {
 
 // add кладет событие в таблицу. Дженерик-функция, а не метод memStore:
 // тип payload у каждого события свой
-func add[T any](store *memStore, id, topic string, e envelope.Envelope[T]) {
+func add[T any](store *memStore, id, topic string, m message.Message[T]) {
 	// ID строки в таблице. В боевом коде его выдает БД
-	msg, err := ecst.NewOutboxRecordFromEnvelope(id, topic, e)
+	msg, err := outbox.NewOutboxMessage(topic, m)
 	if err != nil {
 		slog.Error("build outbox message", "id", id, "error", err)
 
@@ -80,7 +82,7 @@ func add[T any](store *memStore, id, topic string, e envelope.Envelope[T]) {
 // handleOrder применяет событие заказа к своей копии данных.
 //
 // Обязан быть идемпотентным: одно и то же событие может приехать повторно
-func handleOrder(ctx context.Context, e envelope.Envelope[Order]) error {
+func handleOrder(ctx context.Context, e message.Message[Order]) error {
 	attrs := []any{
 		"entity_id", e.EntityID,
 		"version", e.Version,
@@ -90,7 +92,7 @@ func handleOrder(ctx context.Context, e envelope.Envelope[Order]) error {
 	}
 
 	// Топика, партиции и офсета в конверте нет - их достают из ctx, когда нужны
-	if r, ok := ecst.RecordFrom(ctx); ok {
+	if r, ok := inbox.RecordFrom(ctx); ok {
 		attrs = append(attrs, "topic", r.Topic, "partition", r.Partition, "offset", r.Offset)
 	}
 
@@ -101,9 +103,9 @@ func handleOrder(ctx context.Context, e envelope.Envelope[Order]) error {
 
 // handleUser применяет событие пользователя: у второго топика свой тип
 // payload и свой размер пула консьюмеров
-func handleUser(_ context.Context, e envelope.Envelope[User]) error {
+func handleUser(_ context.Context, e message.Message[User]) error {
 	// Delete приезжает без payload: состояния у удаленной сущности нет
-	if e.Op == envelope.OpDelete {
+	if e.Op == message.OpDelete {
 		slog.Info("user deleted", "entity_id", e.EntityID, "version", e.Version)
 
 		return nil

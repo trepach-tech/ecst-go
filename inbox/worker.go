@@ -33,9 +33,9 @@ func NewWorker(cfg *Config, log *slog.Logger) (*Worker, error) {
 	}
 
 	// Создание [consumer.Consumer] на каждый переданный [handlerToRegister]
-	for topic, h := range cfg.topicHandlers {
+	for topic, h := range cfg.TopicHandlers {
 
-		dlqP, err := consumer.NewDLQProducer(w.dlqProducer, cfg.dlqTopic(topic))
+		dlqP, err := NewDLQProducer(w.dlqProducer, cfg.dlqTopic(topic))
 		if err != nil {
 			w.Stop()
 			return nil, fmt.Errorf("failed to create dlq inbox producer for topic: %s: %w", topic, err)
@@ -100,7 +100,7 @@ func (w *Worker) Stop() {
 	for _, c := range w.consumers {
 		c.Close()
 	}
-
+	// TODO: context timeout for close
 	w.dlqProducer.Close(context.Background())
 
 	w.consumers = nil

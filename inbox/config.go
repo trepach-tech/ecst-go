@@ -35,7 +35,7 @@ type Config struct {
 	HandlerTimeout time.Duration
 
 	// Хендлеры по топикам. Регистрируются через [InboxConfig.Register]
-	topicHandlers map[string]consumer.Handler
+	TopicHandlers map[string]consumer.Handler
 }
 
 func DefaultConfig(group string, brokers ...string) *Config {
@@ -66,13 +66,13 @@ func (c *Config) dlqTopic(t string) string {
 //
 // Используйте [RegisterTypedHandler] для своих событий и [RegisterRawHandler] для чужих,
 // чтобы  зарегистрировать хендлер.
-func (c *Config) Register(handlers ...handlerToRegister) {
-	if c.topicHandlers == nil {
-		c.topicHandlers = make(map[string]consumer.Handler)
+func (c *Config) Register(handlers ...HandlerToRegister) {
+	if c.TopicHandlers == nil {
+		c.TopicHandlers = make(map[string]consumer.Handler)
 	}
 
 	for _, h := range handlers {
-		c.topicHandlers[h.topic] = c.withTimeout(h.handler)
+		c.TopicHandlers[h.Topic] = c.withTimeout(h.Handler)
 	}
 }
 
@@ -105,10 +105,10 @@ func (c *Config) Validate() error {
 	if c.HandlerTimeout <= 0 {
 		add("HandlerTimeout must be > 0")
 	}
-	if len(c.topicHandlers) == 0 {
+	if len(c.TopicHandlers) == 0 {
 		add("at least one handler must be registered")
 	}
-	for topic, h := range c.topicHandlers {
+	for topic, h := range c.TopicHandlers {
 		if topic == "" {
 			add("topic must not be empty")
 		}

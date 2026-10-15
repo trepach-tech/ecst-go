@@ -75,10 +75,10 @@ type Config struct {
 
 // DefaultConfig возвращает конфиг с разумными значениями по умолчанию.
 // [Config.Group], [Config.Topic] и [Config.ProcessorConfig.DeadLetterSender] обязательны, их выставляют полями после вызова.
-func DefaultConfig(clientID string, brokers ...string) Config {
+func DefaultConfig(brokers ...string) Config {
 	return Config{
 		Brokers:     brokers,
-		ClientID:    clientID,
+		ClientID:    "ecst-consumer",
 		StartOffset: StartOffsetEarliest,
 
 		DialTimeout:      5 * time.Second,

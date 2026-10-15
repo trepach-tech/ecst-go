@@ -4,37 +4,36 @@ import (
 	"context"
 	"testing"
 
+	"github.com/trepach-tech/ecst-go/inbox"
+	"github.com/trepach-tech/ecst-go/internal/testkit"
+	"github.com/trepach-tech/ecst-go/outbox"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-const testBroker = "localhost:9092"
-
 func noopRaw(context.Context, *kgo.Record) error { return nil }
 
-func validOutbox() *OutboxConfig {
-	return DefaultOutboxConfig(&fakeStore{}, testBroker)
-}
-
-func validInbox() *InboxConfig {
-	cfg := DefaultInboxConfig("test-group", testBroker)
-	cfg.Register(RawTopic("orders", 1, noopRaw))
+func validInboxConfig() *inbox.Config {
+	cfg := inbox.DefaultConfig("test-group", testkit.TestBroker)
+	cfg.Register(inbox.RegisterRawHandler("orders", noopRaw))
 
 	return cfg
 }
 
-// Обе половины опциональны, но хотя бы одна нужна:
-// сервис без воркеров ничего не делает
-func TestConfigValidateNoWorkers(t *testing.T) {
+func validOutboxConfig() *outbox.Config {
+	return outbox.DefaultConfig(&testkit.TestStore{}, testkit.TestBroker)
+}
+
+func TestValidateEmptyConfig(t *testing.T) {
 	if err := (Config{}).validate(); err == nil {
 		t.Fatal("want error")
 	}
 }
 
-func TestConfigValidateEitherWorker(t *testing.T) {
+func TestValidateNotEmptyConfig(t *testing.T) {
 	tests := map[string]Config{
-		"outbox only": {Outbox: validOutbox()},
-		"inbox only":  {Inbox: validInbox()},
-		"both":        {Outbox: validOutbox(), Inbox: validInbox()},
+		"outbox only": {Outbox: validOutboxConfig()},
+		"inbox only":  {Inbox: validInboxConfig()},
+		"both":        {Outbox: validOutboxConfig(), Inbox: validInboxConfig()},
 	}
 
 	for name, cfg := range tests {
@@ -46,109 +45,77 @@ func TestConfigValidateEitherWorker(t *testing.T) {
 	}
 }
 
-func TestOutboxConfigValidate(t *testing.T) {
-	tests := map[string]func(c *OutboxConfig){
-		"no store":            func(c *OutboxConfig) { c.Store = nil },
-		"zero batch size":     func(c *OutboxConfig) { c.BatchSize = 0 },
-		"zero poll interval":  func(c *OutboxConfig) { c.PollInterval = 0 },
-		"zero batch timeout":  func(c *OutboxConfig) { c.BatchTimeout = 0 },
-		"zero store attempts": func(c *OutboxConfig) { c.StoreMaxAttempts = 0 },
-		"broken backoff":      func(c *OutboxConfig) { c.Backoff.Min = 0 },
-		"broken producer":     func(c *OutboxConfig) { c.Producer.Brokers = nil },
-	}
-
-	for name, brk := range tests {
-		t.Run(name, func(t *testing.T) {
-			cfg := validOutbox()
-			brk(cfg)
-
-			if err := cfg.validate(); err == nil {
-				t.Fatal("want error")
-			}
-		})
-	}
-}
-
 func TestInboxConfigValidate(t *testing.T) {
-	tests := map[string]func(c *InboxConfig){
-		"no handlers":          func(c *InboxConfig) { c.handlers = nil },
-		"no group":             func(c *InboxConfig) { c.Consumer.Group = "" },
-		"zero pool size":       func(c *InboxConfig) { c.PoolSize = 0 },
-		"zero handler timeout": func(c *InboxConfig) { c.HandlerTimeout = 0 },
-		"broken producer":      func(c *InboxConfig) { c.Producer.Brokers = nil },
-		"empty topic":          func(c *InboxConfig) { c.Register(RawTopic("", 1, noopRaw)) },
-		"nil handler":          func(c *InboxConfig) { c.Register(RawTopic("orders", 1, nil)) },
-		"negative pool size":   func(c *InboxConfig) { c.Register(RawTopic("orders", -1, noopRaw)) },
+	tests := map[string]func(c *inbox.Config){
+		"no handlers":          func(c *inbox.Config) { c.TopicHandlers = nil },
+		"no group":             func(c *inbox.Config) { c.Consumer.Group = "" },
+		"zero handler timeout": func(c *inbox.Config) { c.HandlerTimeout = 0 },
+		"broken producer":      func(c *inbox.Config) { c.DLQProducer.Brokers = nil },
+		"empty topic":          func(c *inbox.Config) { c.Register(inbox.RegisterRawHandler("", noopRaw)) },
+		"nil handler":          func(c *inbox.Config) { c.Register(inbox.RegisterRawHandler("orders", nil)) },
 	}
 
 	for name, brk := range tests {
 		t.Run(name, func(t *testing.T) {
-			cfg := validInbox()
+			cfg := validInboxConfig()
 			brk(cfg)
 
-			if err := cfg.validate(); err == nil {
+			if err := cfg.Validate(); err == nil {
 				t.Fatal("want error")
 			}
 		})
 	}
 }
 
-// Повторная регистрация топика перетирает предыдущую:
-// два пула на один топик в одной группе - это просто два консьюмера,
-// и какой из хендлеров получит запись, предсказать нельзя
-func TestRegisterOverwrites(t *testing.T) {
-	cfg := validInbox()
-	cfg.Register(RawTopic("orders", 7, noopRaw))
-
-	if len(cfg.handlers) != 1 {
-		t.Fatalf("handlers = %d, want 1", len(cfg.handlers))
+func TestOutboxConfigValidate(t *testing.T) {
+	tests := map[string]func(c *outbox.Config){
+		"no store":            func(c *outbox.Config) { c.Store = nil },
+		"zero batch size":     func(c *outbox.Config) { c.BatchSize = 0 },
+		"zero poll interval":  func(c *outbox.Config) { c.PollInterval = 0 },
+		"zero batch timeout":  func(c *outbox.Config) { c.BatchTimeout = 0 },
+		"zero store attempts": func(c *outbox.Config) { c.StoreMaxAttempts = 0 },
+		"broken backoff":      func(c *outbox.Config) { c.Backoff.Min = 0 },
+		"broken producer":     func(c *outbox.Config) { c.Producer.Brokers = nil },
 	}
 
-	if got := cfg.handlers["orders"].poolSize; got != 7 {
-		t.Fatalf("pool size = %d, want 7", got)
+	for name, brk := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := validOutboxConfig()
+			brk(cfg)
+
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("want error")
+			}
+		})
 	}
 }
 
 func TestRegisterMany(t *testing.T) {
-	cfg := DefaultInboxConfig("test-group", testBroker)
+	cfg := inbox.DefaultConfig("test-group", testkit.TestBroker)
 	cfg.Register(
-		RawTopic("orders", 1, noopRaw),
-		RawTopic("users", 2, noopRaw),
+		inbox.RegisterRawHandler("orders", noopRaw),
+		inbox.RegisterRawHandler("users", noopRaw),
 	)
 
-	if err := cfg.validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)
 	}
 
-	if len(cfg.handlers) != 2 {
-		t.Fatalf("handlers = %d, want 2", len(cfg.handlers))
-	}
-}
-
-// 0 в регистрации означает "взять InboxConfig.PoolSize"
-func TestPoolSizeFallback(t *testing.T) {
-	cfg := DefaultInboxConfig("test-group", testBroker)
-	cfg.PoolSize = 4
-
-	if got := cfg.size(topicHandler{poolSize: 0}); got != 4 {
-		t.Fatalf("size = %d, want 4", got)
-	}
-
-	if got := cfg.size(topicHandler{poolSize: 2}); got != 2 {
-		t.Fatalf("size = %d, want 2", got)
+	if len(cfg.TopicHandlers) != 2 {
+		t.Fatalf("handlers = %d, want 2", len(cfg.TopicHandlers))
 	}
 }
 
 func TestDLQTopic(t *testing.T) {
-	cfg := DefaultInboxConfig("test-group", testBroker)
+	cfg := inbox.DefaultConfig("test-group", testkit.TestBroker)
 
-	if got := cfg.dlqTopic("orders"); got != "orders.dlq" {
+	if got := cfg.DLQTopic("orders"); got != "orders.dlq" {
 		t.Fatalf("dlq topic = %q, want %q", got, "orders.dlq")
 	}
 
 	cfg.DLQTopic = func(topic string) string { return "dlq." + topic }
 
-	if got := cfg.dlqTopic("orders"); got != "dlq.orders" {
+	if got := cfg.DLQTopic("orders"); got != "dlq.orders" {
 		t.Fatalf("dlq topic = %q, want %q", got, "dlq.orders")
 	}
 }

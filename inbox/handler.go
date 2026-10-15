@@ -6,27 +6,27 @@ import (
 
 	"github.com/trepach-tech/ecst-go/backoff"
 	"github.com/trepach-tech/ecst-go/internal/consumer"
-	"github.com/trepach-tech/ecst-go/internal/message"
+	"github.com/trepach-tech/ecst-go/message"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-// handlerToRegister — готовый к регистрации через [Config.Register] handler к топику.
-type handlerToRegister struct {
-	topic   string
-	handler consumer.Handler
+// HandlerToRegister — готовый к регистрации через [Config.Register] handler к топику.
+type HandlerToRegister struct {
+	Topic   string
+	Handler consumer.Handler
 }
 
 // RegisterTypedHandler привязывает [TypedHandler] к топику
-func RegisterTypedHandler[T any](topic string, h TypedHandler[T]) handlerToRegister {
-	return handlerToRegister{topic: topic, handler: toConsumerHandler(h)}
+func RegisterTypedHandler[T any](topic string, h TypedHandler[T]) HandlerToRegister {
+	return HandlerToRegister{Topic: topic, Handler: toConsumerHandler(h)}
 }
 
 // RegisterRawHandler привязывает к топику [consumer.Handler].
 //
 // Нужен для топиков, в которых лежит не [envelope.Envelope].
 // Например: чужой сервис, legacy-формат, CDC от Debezium. Для своих событий есть [RegisterTypedHandler]
-func RegisterRawHandler(topic string, h consumer.Handler) handlerToRegister {
-	return handlerToRegister{topic: topic, handler: h}
+func RegisterRawHandler(topic string, h consumer.Handler) HandlerToRegister {
+	return HandlerToRegister{Topic: topic, Handler: h}
 }
 
 // TypedHandler — типизированный [consumer.Handler].

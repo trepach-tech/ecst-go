@@ -16,7 +16,7 @@ import (
 type Worker struct {
 	log *slog.Logger
 
-	p *producer.Producer
+	P *producer.Producer
 
 	batchSize    int
 	batchTimeout time.Duration
@@ -36,7 +36,7 @@ func NewWorker(log *slog.Logger, cfg *Config) (*Worker, error) {
 
 	return &Worker{
 		log:              log,
-		p:                p,
+		P:                p,
 		batchSize:        cfg.BatchSize,
 		batchTimeout:     cfg.BatchTimeout,
 		pollInterval:     cfg.PollInterval,
@@ -114,12 +114,12 @@ func (w *Worker) processBatch(parentCtx context.Context) (int, error) {
 	records := make([]*kgo.Record, 0, len(msgs))
 
 	for _, m := range msgs {
-		rec, err := m.record()
+		rec, err := m.Record()
 		if err != nil {
 			// Ретраем это не лечится, поэтому строку убираем с дороги:
 			// иначе она вернется из следующего Fetch и так до правки руками.
 			// Батч из-за нее не останавливаем
-			w.markFailed(ctx, m.ID, err)
+			w.MarkFailed(ctx, m.ID, err)
 
 			continue
 		}
@@ -172,7 +172,7 @@ func (w *Worker) processBatch(parentCtx context.Context) (int, error) {
 func (w *Worker) publish(ctx context.Context, rows map[*kgo.Record]string, records []*kgo.Record) (ids []string, failed int) {
 	ids = make([]string, 0, len(records))
 
-	for _, res := range w.p.ProduceSyncResults(ctx, records...) {
+	for _, res := range w.P.ProduceSyncResults(ctx, records...) {
 		id := rows[res.Record]
 
 		switch {
@@ -180,7 +180,7 @@ func (w *Worker) publish(ctx context.Context, rows map[*kgo.Record]string, recor
 			ids = append(ids, id)
 
 		case producer.Permanent(res.Err):
-			w.markFailed(ctx, id, fmt.Errorf("outbox: produce: %w", res.Err))
+			w.MarkFailed(ctx, id, fmt.Errorf("outbox: produce: %w", res.Err))
 
 		default:
 			failed++
@@ -196,11 +196,11 @@ func (w *Worker) publish(ctx context.Context, rows map[*kgo.Record]string, recor
 	return ids, failed
 }
 
-// markFailed уводит неисправимую строку с дороги.
+// MarkFailed уводит неисправимую строку с дороги.
 //
 // Контекст отвязан от отмены: если отметка не доедет, строка вернется
 // из следующего Fetch и упрется в ту же ошибку
-func (w *Worker) markFailed(parentCtx context.Context, id string, cause error) {
+func (w *Worker) MarkFailed(parentCtx context.Context, id string, cause error) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), w.batchTimeout)
 	defer cancel()
 
@@ -247,6 +247,6 @@ func (w *Worker) Stop() {
 	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), closeTimeout)
 	defer cancel()
 
-	w.p.Close(closeCtx)
-	w.p = nil
+	w.P.Close(closeCtx)
+	w.P = nil
 }

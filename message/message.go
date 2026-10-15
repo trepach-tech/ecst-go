@@ -27,6 +27,7 @@ func (o Op) known() bool {
 
 // hasPayload - обязан ли конверт с такой операцией нести payload.
 // Delete только сообщает, что сущности больше нет: состояния у нее уже не бывает
+// Нужен был проверки полноо удаления из сущности (отсутсвие payload означало tomstone Для кафки - удаление всех записей с этим ключом)
 func (o Op) hasPayload() bool { return o != OpDelete }
 
 const (
@@ -41,15 +42,15 @@ const (
 //
 // Source обязателен и выставляется отдельно - [Envelope.WithSource]:
 // без него конверт не пройдет [Message.Validate]
-func New[T any](id, entityType, entityID string, version int64, op Op, payload *T) Message[T] {
+func New[T any](idempotenceKey, entityType, entityID string, version int64, op Op, payload *T) Message[T] {
 	return Message[T]{
-		ID:         id,
-		EntityType: entityType,
-		EntityID:   entityID,
-		Version:    version,
-		Op:         op,
-		Payload:    payload,
-		Timestamp:  time.Now().UTC(),
+		IdempotenceKey: idempotenceKey,
+		EntityType:     entityType,
+		EntityID:       entityID,
+		Version:        version,
+		Op:             op,
+		Payload:        payload,
+		Timestamp:      time.Now().UTC(),
 	}
 }
 
@@ -59,15 +60,15 @@ func New[T any](id, entityType, entityID string, version int64, op Op, payload *
 // В ECST payload - полное состояние сущности, а не дельта: получатель
 // должен уметь собрать свою копию, ничего не доспрашивая
 type Message[T any] struct {
-	ID         string    `json:"id"`
-	EntityType string    `json:"entity_type"`
-	EntityID   string    `json:"entity_id"`
-	Version    int64     `json:"version"`
-	Op         Op        `json:"op"`
-	Payload    *T        `json:"payload,omitempty"`
-	Timestamp  time.Time `json:"timestamp"`
-	TraceID    string    `json:"trace_id,omitempty"`
-	Source     Source    `json:"source"`
+	IdempotenceKey string    `json:"id"`
+	EntityType     string    `json:"entity_type"`
+	EntityID       string    `json:"entity_id"`
+	Version        int64     `json:"version"`
+	Op             Op        `json:"op"`
+	Payload        *T        `json:"payload,omitempty"`
+	Timestamp      time.Time `json:"timestamp"`
+	TraceID        string    `json:"trace_id,omitempty"`
+	Source         Source    `json:"source"`
 }
 
 // Source - кто опубликовал событие и по какой версии схемы

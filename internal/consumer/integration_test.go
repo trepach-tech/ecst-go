@@ -124,7 +124,7 @@ func rec(topic string, partition int32, key, value string) *kgo.Record {
 
 // testConfig - конфиг с быстрыми таймаутами: ждать дефолтных пауз в тестах незачем
 func testConfig(brokers []string, topic, group string, dlq DeadLetterSender) Config {
-	cfg := DefaultConfig("ecst-consumer", brokers...)
+	cfg := DefaultConfig(brokers...)
 	cfg.Group = group
 	cfg.Topic = topic
 	cfg.ProcessorConfig.DeadLetterSender = dlq
