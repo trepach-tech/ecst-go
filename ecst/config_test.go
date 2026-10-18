@@ -48,7 +48,6 @@ func TestValidateNotEmptyConfig(t *testing.T) {
 func TestInboxConfigValidate(t *testing.T) {
 	tests := map[string]func(c *inbox.Config){
 		"no handlers":          func(c *inbox.Config) { c.TopicHandlers = nil },
-		"no group":             func(c *inbox.Config) { c.Consumer.Group = "" },
 		"zero handler timeout": func(c *inbox.Config) { c.HandlerTimeout = 0 },
 		"broken producer":      func(c *inbox.Config) { c.DLQProducer.Brokers = nil },
 		"empty topic":          func(c *inbox.Config) { c.Register(inbox.RegisterRawHandler("", noopRaw)) },
@@ -113,7 +112,7 @@ func TestDLQTopic(t *testing.T) {
 		t.Fatalf("dlq topic = %q, want %q", got, "orders.dlq")
 	}
 
-	cfg.DLQTopic = func(topic string) string { return "dlq." + topic }
+	cfg.CustomDLQTopic = func(topic string) string { return "dlq." + topic }
 
 	if got := cfg.DLQTopic("orders"); got != "dlq.orders" {
 		t.Fatalf("dlq topic = %q, want %q", got, "dlq.orders")

@@ -35,13 +35,13 @@ func NewWorker(cfg *Config, log *slog.Logger) (*Worker, error) {
 	// Создание [consumer.Consumer] на каждый переданный [handlerToRegister]
 	for topic, h := range cfg.TopicHandlers {
 
-		dlqP, err := NewDLQProducer(w.dlqProducer, cfg.dlqTopic(topic))
+		dlqP, err := NewDLQProducer(w.dlqProducer, cfg.DLQTopic(topic))
 		if err != nil {
 			w.Stop()
 			return nil, fmt.Errorf("failed to create dlq inbox producer for topic: %s: %w", topic, err)
 		}
 
-		c, err := w.newConsumer(cfg.Consumer, topic, h, dlqP)
+		c, err := w.newConsumer(cfg.ConsumerConfigTemplate, topic, cfg.WithTimeout(h), dlqP)
 		if err != nil {
 			w.Stop()
 			return nil, fmt.Errorf("failed to create consumer for topic: %s: %w", topic, err)

@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"uuid"
 
 	"github.com/trepach-tech/ecst-go/inbox"
 	"github.com/trepach-tech/ecst-go/message"
@@ -202,11 +201,11 @@ func testOutboxConfigWithShortBackoff(store outbox.Store, brokers []string) *out
 // testInboxConfigWithShortBackoff - inbox config с короткими паузами
 func testInboxConfigWithShortBackoff(group string, brokers []string, regs ...inbox.HandlerToRegister) *inbox.Config {
 	cfg := inbox.DefaultConfig(group, brokers...)
-	cfg.Consumer.ProcessorConfig.HandlerMaxAttempts = 1
-	cfg.Consumer.ProcessorConfig.DLQMaxAttempts = 1
-	cfg.Consumer.ProcessorConfig.Backoff = fastBackoff()
-	cfg.Consumer.ClientBackoff = fastBackoff()
-	cfg.Consumer.FetchMaxWait = 50 * time.Millisecond
+	cfg.ConsumerConfigTemplate.ProcessorConfig.HandlerMaxAttempts = 1
+	cfg.ConsumerConfigTemplate.ProcessorConfig.DLQMaxAttempts = 1
+	cfg.ConsumerConfigTemplate.ProcessorConfig.Backoff = fastBackoff()
+	cfg.ConsumerConfigTemplate.ClientBackoff = fastBackoff()
+	cfg.ConsumerConfigTemplate.FetchMaxWait = 50 * time.Millisecond
 	cfg.HandlerTimeout = 10 * time.Second
 	cfg.Register(regs...)
 
@@ -250,7 +249,7 @@ type order struct {
 func outboxMessage(t *testing.T, id, topic string, version int64) outbox.OutboxMessage {
 	t.Helper()
 
-	e := message.New(uuid.New().String(), "order", "order-1", version, message.OpUpdate, &order{Sum: 100 * int(version)}).
+	e := message.New(id, "order", "order-1", version, message.OpUpdate, &order{Sum: 100 * int(version)}).
 		WithSource("orders-service", "v1").
 		WithTraceID(fmt.Sprintf("trace-%d", version))
 
@@ -386,7 +385,7 @@ func TestIntegrationInboxSendsBrokenEventToDLQ(t *testing.T) {
 	))
 	// Имя DLQ-топика по умолчанию - topic + ".dlq", но имена в тестах
 	// уникальны, поэтому указываем явно
-	inboxWorkerConfig.DLQTopic = func(string) string { return dlqTopic }
+	inboxWorkerConfig.CustomDLQTopic = func(string) string { return dlqTopic }
 
 	store := newRoundStore(outboxMessage(t, "row-1", topic, 1))
 

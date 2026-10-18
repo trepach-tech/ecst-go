@@ -52,7 +52,7 @@ func TestRetrySucceedsAfterFailures(t *testing.T) {
 		Backoff: fast(),
 	}
 
-	if err := r.Do(context.Background(), 3, op, nil); err != nil {
+	if err := r.Do(context.Background(), 3, op, func(attempt int, _ error) { retries = attempt }); err != nil {
 		t.Fatalf("do: %v", err)
 	}
 
@@ -192,7 +192,7 @@ func TestRetryCanceled(t *testing.T) {
 
 func TestWait(t *testing.T) {
 	r := Retry{
-		Backoff: Backoff{Min: time.Hour, Max: time.Hour, Factor: 1},
+		Backoff: Backoff{Min: time.Second, Max: 5 * time.Second, Factor: 1},
 	}
 
 	if err := r.wait(context.Background(), 1); err != nil {

@@ -74,7 +74,7 @@ type Config struct {
 }
 
 // DefaultConfig возвращает конфиг с разумными значениями по умолчанию.
-// [Config.Group], [Config.Topic] и [Config.ProcessorConfig.DeadLetterSender] обязательны, их выставляют полями после вызова.
+// [Config.Group], [Config.Topic], [ProcessorConfig.Handler] [ProcessorConfig.DeadLetterSender] обязательны, их выставляют полями после вызова.
 func DefaultConfig(brokers ...string) Config {
 	return Config{
 		Brokers:     brokers,

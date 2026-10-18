@@ -14,8 +14,9 @@ import (
 type Config struct {
 	// Базовая конфигурация одного consumer'а [InboxWorker].
 	//
-	// Topic и DLQ определяются самим [InboxWorker] при создании consumer'а.
-	Consumer consumer.Config
+	// Log, Topic, ProcessorConfig.Hanler и ProcessorConfig.DeadLetterSender
+	// определяются самим [InboxWorker] при создании consumer'а.
+	ConsumerConfigTemplate consumer.Config
 
 	// Общая конфигурация DLQ producer'а.
 	//
@@ -26,7 +27,7 @@ type Config struct {
 	// Возвращает имя DLQ-топика для указанного топика.
 	//
 	// По умолчанию к имени топика добавляется суффикс ".dlq".
-	DLQTopic func(topic string) string
+	CustomDLQTopic func(topic string) string
 
 	// Максимальное время выполнения одного вызова хендлера.
 	//
@@ -46,16 +47,16 @@ func DefaultConfig(group string, brokers ...string) *Config {
 	p.ClientID = group + "-dlq"
 
 	return &Config{
-		Consumer:       cfg,
-		DLQProducer:    p,
-		HandlerTimeout: 30 * time.Second,
+		ConsumerConfigTemplate: cfg,
+		DLQProducer:            p,
+		HandlerTimeout:         30 * time.Second,
 	}
 }
 
-// dlqTopic - имя DLQ-топика для топика t
-func (c *Config) dlqTopic(t string) string {
-	if c.DLQTopic != nil {
-		return c.DLQTopic(t)
+// DLQTopic - имя DLQ-топика для топика t
+func (c *Config) DLQTopic(t string) string {
+	if c.CustomDLQTopic != nil {
+		return c.CustomDLQTopic(t)
 	}
 
 	return t + ".dlq"
@@ -72,7 +73,7 @@ func (c *Config) Register(handlers ...HandlerToRegister) {
 	}
 
 	for _, h := range handlers {
-		c.TopicHandlers[h.Topic] = c.withTimeout(h.Handler)
+		c.TopicHandlers[h.Topic] = h.Handler
 	}
 }
 
@@ -81,7 +82,7 @@ func (c *Config) Register(handlers ...HandlerToRegister) {
 // Хендлер обязан уважать ctx: сам по себе таймаут его не прервет,
 // но по возврату ошибки запись пойдет на ретрай и потом в DLQ,
 // а партиция не встанет молча
-func (c *Config) withTimeout(h consumer.Handler) consumer.Handler {
+func (c *Config) WithTimeout(h consumer.Handler) consumer.Handler {
 	return func(ctx context.Context, r *kgo.Record) error {
 		ctx, cancel := context.WithTimeout(ctx, c.HandlerTimeout)
 		defer cancel()
@@ -94,9 +95,7 @@ func (c *Config) Validate() error {
 	var errs []error
 	add := func(msg string) { errs = append(errs, errors.New("inbox: "+msg)) }
 
-	if err := c.Consumer.Validate(); err != nil {
-		errs = append(errs, fmt.Errorf("inbox: %w", err))
-	}
+	// Конфигурация консьюмера здесь не валидируется, поскольку у каждого консьюмера своя конфигурация.
 
 	if err := c.DLQProducer.Validate(); err != nil {
 		errs = append(errs, fmt.Errorf("inbox: %w", err))

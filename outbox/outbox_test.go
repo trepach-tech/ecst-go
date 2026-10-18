@@ -169,15 +169,13 @@ func TestNewOutboxMessageErrors(t *testing.T) {
 	valid := testMessage(t, 1)
 
 	tests := map[string]struct {
-		id    string
 		topic string
 		e     message.Message[order]
 	}{
-		"no id":            {id: "", topic: "orders", e: valid},
-		"no topic":         {id: "row-1", topic: "", e: valid},
-		"broken envelope":  {id: "row-1", topic: "orders", e: message.Message[order]{}},
-		"no entity id":     {id: "row-1", topic: "orders", e: message.New("id", "order", "", 1, message.OpCreate, &order{})},
-		"payload required": {id: "row-1", topic: "orders", e: message.New[order]("id", "order", "order-1", 1, message.OpCreate, nil)},
+		"no topic":         {topic: "", e: valid},
+		"broken envelope":  {topic: "orders", e: message.Message[order]{}},
+		"no entity id":     {topic: "orders", e: message.New("id", "order", "", 1, message.OpCreate, &order{})},
+		"payload required": {topic: "orders", e: message.New[order]("id", "order", "order-1", 1, message.OpCreate, nil)},
 	}
 
 	for name, tt := range tests {
