@@ -1,4 +1,4 @@
-package consumer
+package inbox
 
 import (
 	"context"
@@ -9,10 +9,10 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kgo"
 
-	"github.com/trepach-tech/ecst-go/producer"
+	"github.com/trepach-tech/ecst-go/internal/producer"
 )
 
-// Заголовки, которые [KafkaDLQ] добавляет к записи:
+// Заголовки, которые [DLQProducer] добавляет к записи:
 // без них в DLQ лежит анонимный блоб, по которому не найти ни источник, ни причину
 const (
 	HeaderDLQTopic     = "dlq_source_topic"
@@ -22,21 +22,18 @@ const (
 	HeaderDLQTime      = "dlq_time"
 )
 
-// DLQ - куда уезжают записи, которые не удалось обработать.
-//
-// Send возвращается без ошибки только когда запись действительно сохранена:
-// сразу после этого консьюмер коммитит офсет и запись больше не приедет
-type DLQ interface {
-	Send(ctx context.Context, r *kgo.Record, cause error) error
+type SyncProducer interface {
+	ProduceSync(ctx context.Context, records ...*kgo.Record) error
+	Close(context.Context) error
 }
 
-// KafkaDLQ складывает необработанные записи в отдельный топик
-type KafkaDLQ struct {
-	producer *producer.Producer
-	topic    string
+// DLQProducer складывает необработанные записи в отдельный топик
+type DLQProducer struct {
+	SyncProducer
+	topic string
 }
 
-func NewKafkaDLQ(p *producer.Producer, topic string) (*KafkaDLQ, error) {
+func NewDLQProducer(p *producer.Producer, topic string) (*DLQProducer, error) {
 	if p == nil {
 		return nil, errors.New("dlq: producer is required")
 	}
@@ -44,16 +41,16 @@ func NewKafkaDLQ(p *producer.Producer, topic string) (*KafkaDLQ, error) {
 		return nil, errors.New("dlq: topic is required")
 	}
 
-	return &KafkaDLQ{
-		producer: p,
-		topic:    topic,
+	return &DLQProducer{
+		SyncProducer: p,
+		topic:        topic,
 	}, nil
 }
 
 // Send отправляет запись в DLQ-топик синхронно: вернуться раньше, чем брокер
 // подтвердил запись, нельзя - консьюмер по возврату сразу коммитит офсет исходной
-func (d *KafkaDLQ) Send(ctx context.Context, r *kgo.Record, cause error) error {
-	if err := d.producer.ProduceSync(ctx, d.record(r, cause)); err != nil {
+func (d *DLQProducer) Send(ctx context.Context, r *kgo.Record, cause error) error {
+	if err := d.ProduceSync(ctx, d.record(r, cause)); err != nil {
 		return fmt.Errorf("dlq: %w", err)
 	}
 
@@ -61,7 +58,7 @@ func (d *KafkaDLQ) Send(ctx context.Context, r *kgo.Record, cause error) error {
 }
 
 // record - копия записи в DLQ-топик с метаданными происхождения
-func (d *KafkaDLQ) record(r *kgo.Record, cause error) *kgo.Record {
+func (d *DLQProducer) record(r *kgo.Record, cause error) *kgo.Record {
 	headers := make([]kgo.RecordHeader, 0, len(r.Headers)+5)
 	headers = append(headers, r.Headers...)
 	headers = append(headers,

@@ -1,4 +1,4 @@
-package envelope
+package message
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ type order struct {
 }
 
 func TestEncodeDecodeRoundTrip(t *testing.T) {
-	in := New("order", "order-1", 7, OpUpdate, &order{Total: 100}).
+	in := New("id", "order", "order-1", 7, OpUpdate, &order{Total: 100}).
 		WithSource("orders-service", "v1").
 		WithTraceID("trace-1")
 
@@ -46,7 +46,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 
 // Delete приезжает без payload: nil должен пережить round trip
 func TestDeleteHasNoPayload(t *testing.T) {
-	raw, err := New[order]("order", "order-1", 8, OpDelete, nil).
+	raw, err := New[order]("id", "order", "order-1", 8, OpDelete, nil).
 		WithSource("orders-service", "v1").
 		Encode()
 	if err != nil {
@@ -70,8 +70,8 @@ func TestDecodeBroken(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
-	valid := func() Envelope[order] {
-		return New("order", "order-1", 1, OpCreate, &order{Total: 1}).
+	valid := func() Message[order] {
+		return New("id", "order", "order-1", 1, OpCreate, &order{Total: 1}).
 			WithSource("orders-service", "v1")
 	}
 
@@ -79,16 +79,16 @@ func TestValidate(t *testing.T) {
 		t.Fatalf("valid envelope: %v", err)
 	}
 
-	tests := map[string]func(e *Envelope[order]){
-		"no entity type": func(e *Envelope[order]) { e.EntityType = "" },
-		"no entity id":   func(e *Envelope[order]) { e.EntityID = "" },
-		"zero version":   func(e *Envelope[order]) { e.Version = 0 },
-		"no op":          func(e *Envelope[order]) { e.Op = "" },
-		"unknown op":     func(e *Envelope[order]) { e.Op = "x" },
-		"no payload":     func(e *Envelope[order]) { e.Payload = nil },
-		"no service":     func(e *Envelope[order]) { e.Source.Service = "" },
-		"no schema ver":  func(e *Envelope[order]) { e.Source.SchemaVer = "" },
-		"no timestamp":   func(e *Envelope[order]) { e.Timestamp = time.Time{} },
+	tests := map[string]func(e *Message[order]){
+		"no entity type": func(e *Message[order]) { e.EntityType = "" },
+		"no entity id":   func(e *Message[order]) { e.EntityID = "" },
+		"zero version":   func(e *Message[order]) { e.Version = 0 },
+		"no op":          func(e *Message[order]) { e.Op = "" },
+		"unknown op":     func(e *Message[order]) { e.Op = "x" },
+		"no payload":     func(e *Message[order]) { e.Payload = nil },
+		"no service":     func(e *Message[order]) { e.Source.Service = "" },
+		"no schema ver":  func(e *Message[order]) { e.Source.SchemaVer = "" },
+		"no timestamp":   func(e *Message[order]) { e.Timestamp = time.Time{} },
 	}
 
 	for name, break_ := range tests {
@@ -105,7 +105,7 @@ func TestValidate(t *testing.T) {
 
 // Delete без payload валиден, остальные операции - нет
 func TestValidateDeleteWithoutPayload(t *testing.T) {
-	e := New[order]("order", "order-1", 1, OpDelete, nil).WithSource("orders-service", "v1")
+	e := New[order]("id", "order", "order-1", 1, OpDelete, nil).WithSource("orders-service", "v1")
 
 	if err := e.Validate(); err != nil {
 		t.Fatalf("delete without payload: %v", err)
@@ -113,7 +113,7 @@ func TestValidateDeleteWithoutPayload(t *testing.T) {
 }
 
 func TestHeaders(t *testing.T) {
-	h := New("order", "order-1", 1, OpCreate, &order{}).
+	h := New("id", "order", "order-1", 1, OpCreate, &order{}).
 		WithSource("orders-service", "v1").
 		WithTraceID("trace-1").
 		Headers()
@@ -126,7 +126,7 @@ func TestHeaders(t *testing.T) {
 	}
 
 	// Без trace id заголовка быть не должно: пустое значение хуже отсутствующего
-	if _, ok := New("order", "order-1", 1, OpCreate, &order{}).Headers()[HeaderTraceID]; ok {
+	if _, ok := New("id", "order", "order-1", 1, OpCreate, &order{}).Headers()[HeaderTraceID]; ok {
 		t.Fatalf("%s must be absent without trace id", HeaderTraceID)
 	}
 }

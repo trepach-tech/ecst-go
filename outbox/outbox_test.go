@@ -1,4 +1,4 @@
-package ecst
+package outbox
 
 import (
 	"context"
@@ -9,15 +9,17 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/trepach-tech/ecst-go/consumer"
-	"github.com/trepach-tech/ecst-go/envelope"
+	"github.com/trepach-tech/ecst-go/backoff"
+	"github.com/trepach-tech/ecst-go/message"
 )
+
+const testBroker = "localhost:9092"
 
 // fakeStore - [OutboxStore], который считает вызовы и умеет падать
 type fakeStore struct {
 	mu sync.Mutex
 
-	msgs []OutboxRecord
+	msgs []OutboxMessage
 
 	fetchErr      error
 	markSentErr   error
@@ -32,7 +34,7 @@ type fakeStore struct {
 	failCauses []error
 }
 
-func (f *fakeStore) Fetch(_ context.Context, limit int) ([]OutboxRecord, error) {
+func (f *fakeStore) Fetch(_ context.Context, limit int) ([]OutboxMessage, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -86,21 +88,25 @@ func quietLog() *slog.Logger {
 }
 
 // testWorker - воркер без продюсера: годится для всего, что не публикует
-func testWorker(t *testing.T, store *fakeStore) *outboxWorker {
+func testWorker(t *testing.T, store *fakeStore) *Worker {
 	t.Helper()
 
-	cfg := DefaultOutboxConfig(store, testBroker)
+	cfg := DefaultConfig(store, testBroker)
 	cfg.StoreMaxAttempts = 3
 	cfg.Backoff.Min = 1 // не спим в тестах
 	cfg.Backoff.Max = 1
 
-	return newOutboxWorker(cfg, nil, quietLog())
+	w, err := NewWorker(quietLog(), cfg)
+	if err != nil {
+		t.Fatalf("failed to create outbox worker: %s", err)
+	}
+	return w
 }
 
-func testEnvelope(t *testing.T, version int64) envelope.Envelope[order] {
+func testMessage(t *testing.T, version int64) message.Message[order] {
 	t.Helper()
 
-	return envelope.New("order", "order-1", version, envelope.OpCreate, &order{Sum: 100}).
+	return message.New("id", "order", "order-1", version, message.OpCreate, &order{Sum: 100}).
 		WithSource("orders-service", "v1")
 }
 
@@ -110,19 +116,19 @@ type order struct {
 
 // errPermanentStore - ошибка стора, которую бессмысленно повторять:
 // так он сообщает про нарушение констрейнта или битую схему
-var errPermanentStore = fmt.Errorf("constraint violation: %w", consumer.ErrPermanent)
+var errPermanentStore = fmt.Errorf("constraint violation: %w", backoff.ErrPermanent)
 
 // Ключ записи - EntityID: события одной сущности должны лечь в одну партицию,
 // иначе их порядок потеряется
 func TestRecordFromEnvelope(t *testing.T) {
-	e := testEnvelope(t, 7).WithTraceID("trace-1")
+	e := testMessage(t, 7).WithTraceID("trace-1")
 
-	msg, err := NewOutboxRecordFromEnvelope("row-1", "orders", e)
+	msg, err := NewOutboxMessage("orders", e)
 	if err != nil {
 		t.Fatalf("new outbox message: %v", err)
 	}
 
-	rec, err := msg.record()
+	rec, err := msg.Record()
 	if err != nil {
 		t.Fatalf("record: %v", err)
 	}
@@ -140,16 +146,16 @@ func TestRecordFromEnvelope(t *testing.T) {
 		headers[h.Key] = string(h.Value)
 	}
 
-	if headers[envelope.HeaderEntityType] != "order" {
-		t.Errorf("%s = %q, want %q", envelope.HeaderEntityType, headers[envelope.HeaderEntityType], "order")
+	if headers[message.HeaderEntityType] != "order" {
+		t.Errorf("%s = %q, want %q", message.HeaderEntityType, headers[message.HeaderEntityType], "order")
 	}
 
-	if headers[envelope.HeaderTraceID] != "trace-1" {
-		t.Errorf("%s = %q, want %q", envelope.HeaderTraceID, headers[envelope.HeaderTraceID], "trace-1")
+	if headers[message.HeaderTraceID] != "trace-1" {
+		t.Errorf("%s = %q, want %q", message.HeaderTraceID, headers[message.HeaderTraceID], "trace-1")
 	}
 
 	// Значение записи - это сам конверт
-	out, err := envelope.Decode[order](rec.Value)
+	out, err := message.Decode[order](rec.Value)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -160,23 +166,21 @@ func TestRecordFromEnvelope(t *testing.T) {
 }
 
 func TestNewOutboxMessageErrors(t *testing.T) {
-	valid := testEnvelope(t, 1)
+	valid := testMessage(t, 1)
 
 	tests := map[string]struct {
-		id    string
 		topic string
-		e     envelope.Envelope[order]
+		e     message.Message[order]
 	}{
-		"no id":            {id: "", topic: "orders", e: valid},
-		"no topic":         {id: "row-1", topic: "", e: valid},
-		"broken envelope":  {id: "row-1", topic: "orders", e: envelope.Envelope[order]{}},
-		"no entity id":     {id: "row-1", topic: "orders", e: envelope.New("order", "", 1, envelope.OpCreate, &order{})},
-		"payload required": {id: "row-1", topic: "orders", e: envelope.New[order]("order", "order-1", 1, envelope.OpCreate, nil)},
+		"no topic":         {topic: "", e: valid},
+		"broken envelope":  {topic: "orders", e: message.Message[order]{}},
+		"no entity id":     {topic: "orders", e: message.New("id", "order", "", 1, message.OpCreate, &order{})},
+		"payload required": {topic: "orders", e: message.New[order]("id", "order", "order-1", 1, message.OpCreate, nil)},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			if _, err := NewOutboxRecordFromEnvelope(tt.id, tt.topic, tt.e); err == nil {
+			if _, err := NewOutboxMessage(tt.topic, tt.e); err == nil {
 				t.Fatal("want error")
 			}
 		})
@@ -185,14 +189,14 @@ func TestNewOutboxMessageErrors(t *testing.T) {
 
 // Строка без топика в запись не собирается: публиковать ее некуда
 func TestRecordWithoutTopic(t *testing.T) {
-	msg, err := NewOutboxRecordFromEnvelope("row-1", "orders", testEnvelope(t, 1))
+	msg, err := NewOutboxMessage("orders", testMessage(t, 1))
 	if err != nil {
 		t.Fatalf("new outbox message: %v", err)
 	}
 
 	msg.Topic = ""
 
-	if _, err := msg.record(); err == nil {
+	if _, err := msg.Record(); err == nil {
 		t.Fatal("want error")
 	}
 }
@@ -204,7 +208,7 @@ func TestMarkFailed(t *testing.T) {
 	w := testWorker(t, store)
 
 	cause := errors.New("broken envelope")
-	w.markFailed(context.Background(), "row-1", cause)
+	w.MarkFailed(context.Background(), "row-1", cause)
 
 	if store.markFailedCalls != 1 {
 		t.Fatalf("MarkFailed calls = %d, want 1", store.markFailedCalls)
@@ -224,10 +228,10 @@ func TestStoreRetried(t *testing.T) {
 	store := &fakeStore{markFailedErr: errors.New("db is down")}
 	w := testWorker(t, store)
 
-	w.markFailed(context.Background(), "row-1", errors.New("cause"))
+	w.MarkFailed(context.Background(), "row-1", errors.New("cause"))
 
-	if store.markFailedCalls != w.cfg.StoreMaxAttempts {
-		t.Fatalf("MarkFailed calls = %d, want %d", store.markFailedCalls, w.cfg.StoreMaxAttempts)
+	if store.markFailedCalls != w.storeMaxAttempts {
+		t.Fatalf("MarkFailed calls = %d, want %d", store.markFailedCalls, w.storeMaxAttempts)
 	}
 }
 
@@ -237,7 +241,7 @@ func TestStoreRetryStopsOnPermanent(t *testing.T) {
 	store := &fakeStore{markFailedErr: errPermanentStore}
 	w := testWorker(t, store)
 
-	w.markFailed(context.Background(), "row-1", errors.New("cause"))
+	w.MarkFailed(context.Background(), "row-1", errors.New("cause"))
 
 	if store.markFailedCalls != 1 {
 		t.Fatalf("MarkFailed calls = %d, want 1", store.markFailedCalls)
@@ -273,15 +277,15 @@ func TestProcessBatchFetchFails(t *testing.T) {
 		t.Fatal("want error")
 	}
 
-	if store.fetchCalls != w.cfg.StoreMaxAttempts {
-		t.Fatalf("Fetch calls = %d, want %d", store.fetchCalls, w.cfg.StoreMaxAttempts)
+	if store.fetchCalls != w.storeMaxAttempts {
+		t.Fatalf("Fetch calls = %d, want %d", store.fetchCalls, w.storeMaxAttempts)
 	}
 }
 
 // Ни одна строка не собралась в запись: публиковать нечего, все уехали
 // в MarkFailed. До продюсера (в тесте его нет) дело не доходит
 func TestProcessBatchAllBroken(t *testing.T) {
-	store := &fakeStore{msgs: []OutboxRecord{{ID: "row-1"}, {ID: "row-2"}}}
+	store := &fakeStore{msgs: []OutboxMessage{{ID: "row-1"}, {ID: "row-2"}}}
 	w := testWorker(t, store)
 
 	sent, err := w.processBatch(context.Background())

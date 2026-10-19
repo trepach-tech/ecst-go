@@ -123,24 +123,26 @@ func rec(topic string, partition int32, key, value string) *kgo.Record {
 }
 
 // testConfig - конфиг с быстрыми таймаутами: ждать дефолтных пауз в тестах незачем
-func testConfig(brokers []string, topic, group string, dlq DLQ) Config {
+func testConfig(brokers []string, topic, group string, dlq DeadLetterSender, handler Handler) Config {
 	cfg := DefaultConfig(brokers...)
+	cfg.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg.Group = group
-	cfg.Topics = []string{topic}
-	cfg.DLQ = dlq
-	cfg.HandlerMaxAttempts = 1
-	cfg.DLQMaxAttempts = 1
-	cfg.Backoff = backoff.Config{Min: time.Millisecond, Max: time.Millisecond, Factor: 1, Jitter: 0}
+	cfg.Topic = topic
+	cfg.ProcessorConfig.DeadLetterSender = dlq
+	cfg.ProcessorConfig.Handler = handler
+	cfg.ProcessorConfig.HandlerMaxAttempts = 1
+	cfg.ProcessorConfig.DLQMaxAttempts = 1
+	cfg.ClientBackoff = backoff.Backoff{Min: time.Millisecond, Max: time.Millisecond, Factor: 1, Jitter: 0}
 	cfg.FetchMaxWait = 50 * time.Millisecond
 
 	return cfg
 }
 
 // runConsumer запускает консьюмера в фоне и гасит его по завершении теста
-func runConsumer(t *testing.T, cfg Config, handler Handler) *Consumer {
+func runConsumer(t *testing.T, cfg Config) *Consumer {
 	t.Helper()
 
-	c, err := NewConsumer(cfg, handler)
+	c, err := NewConsumer(cfg)
 	if err != nil {
 		t.Fatalf("new consumer: %v", err)
 	}
@@ -206,7 +208,7 @@ func TestPoolProcessesPartitionsInParallel(t *testing.T) {
 		return nil
 	}
 
-	runConsumer(t, testConfig(brokers, topic, t.Name(), &fakeDLQ{}), handler)
+	runConsumer(t, testConfig(brokers, topic, t.Name(), &fakeDLQ{}, handler))
 
 	select {
 	case <-all:
@@ -264,7 +266,7 @@ func TestPoolKeepsOrderWithinPartition(t *testing.T) {
 		return nil
 	}
 
-	runConsumer(t, testConfig(brokers, topic, t.Name(), &fakeDLQ{}), handler)
+	runConsumer(t, testConfig(brokers, topic, t.Name(), &fakeDLQ{}, handler))
 
 	select {
 	case <-done:
@@ -311,7 +313,7 @@ func TestPoolSendsFailedRecordToDLQ(t *testing.T) {
 		return nil
 	}
 
-	runConsumer(t, testConfig(brokers, topic, t.Name(), dlq), handler)
+	runConsumer(t, testConfig(brokers, topic, t.Name(), dlq, handler))
 
 	select {
 	case <-done:
@@ -371,7 +373,7 @@ func TestPoolStallsOnlyBrokenPartition(t *testing.T) {
 	// DLQ недоступна - деть отравленную запись некуда
 	dlq := &fakeDLQ{err: errors.New("dlq is down")}
 
-	runConsumer(t, testConfig(brokers, topic, t.Name(), dlq), handler)
+	runConsumer(t, testConfig(brokers, topic, t.Name(), dlq, handler))
 
 	select {
 	case <-healthy:
@@ -427,7 +429,7 @@ func TestPoolRebalancesBetweenConsumers(t *testing.T) {
 	}
 
 	// Первый консьюмер забирает все четыре партиции
-	runConsumer(t, testConfig(brokers, topic, group, &fakeDLQ{}), handler("a"))
+	runConsumer(t, testConfig(brokers, topic, group, &fakeDLQ{}, handler("a")))
 
 	produce(t, brokers, batch(topic, partitions, "round-1")...)
 	waitFor(t, 45*time.Second, "первый консьюмер не забрал все партиции", func() bool {
@@ -437,7 +439,7 @@ func TestPoolRebalancesBetweenConsumers(t *testing.T) {
 	})
 
 	// Второй входит в ту же группу - часть партиций должна уехать к нему
-	runConsumer(t, testConfig(brokers, topic, group, &fakeDLQ{}), handler("b"))
+	runConsumer(t, testConfig(brokers, topic, group, &fakeDLQ{}, handler("b")))
 
 	waitFor(t, 60*time.Second, "партиции не разъехались на второго консьюмера", func() bool {
 		// Пишем непрерывно: иначе после ребаланса второму может

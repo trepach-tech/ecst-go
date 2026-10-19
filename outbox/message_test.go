@@ -1,4 +1,4 @@
-package ecst
+package outbox
 
 import (
 	"context"
@@ -7,12 +7,13 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kgo"
 
-	"github.com/trepach-tech/ecst-go/consumer"
-	"github.com/trepach-tech/ecst-go/envelope"
+	"github.com/trepach-tech/ecst-go/backoff"
+	"github.com/trepach-tech/ecst-go/inbox"
+	"github.com/trepach-tech/ecst-go/message"
 )
 
 // encode - конверт как он лежит в топике
-func encode[T any](t *testing.T, e envelope.Envelope[T]) []byte {
+func encode[T any](t *testing.T, e message.Message[T]) []byte {
 	t.Helper()
 
 	raw, err := e.Encode()
@@ -25,17 +26,17 @@ func encode[T any](t *testing.T, e envelope.Envelope[T]) []byte {
 
 // Хендлер получает разобранный конверт, транспорт наружу не торчит
 func TestTopicDecodesEnvelope(t *testing.T) {
-	var got envelope.Envelope[order]
+	var got message.Message[order]
 
-	reg := Topic("orders", 1, func(_ context.Context, e envelope.Envelope[order]) error {
+	reg := inbox.RegisterTypedHandler("orders", func(_ context.Context, e message.Message[order]) error {
 		got = e
 
 		return nil
 	})
 
-	rec := &kgo.Record{Topic: "orders", Value: encode(t, testEnvelope(t, 7))}
+	rec := &kgo.Record{Topic: "orders", Value: encode(t, testMessage(t, 7))}
 
-	if err := reg.handler(context.Background(), rec); err != nil {
+	if err := reg.Handler(context.Background(), rec); err != nil {
 		t.Fatalf("handler: %v", err)
 	}
 
@@ -53,13 +54,13 @@ func TestTopicDecodesEnvelope(t *testing.T) {
 func TestTopicPassesHandlerError(t *testing.T) {
 	want := errors.New("apply failed")
 
-	reg := Topic("orders", 1, func(context.Context, envelope.Envelope[order]) error {
+	reg := inbox.RegisterTypedHandler("orders", func(context.Context, message.Message[order]) error {
 		return want
 	})
 
-	rec := &kgo.Record{Value: encode(t, testEnvelope(t, 1))}
+	rec := &kgo.Record{Value: encode(t, testMessage(t, 1))}
 
-	if err := reg.handler(context.Background(), rec); !errors.Is(err, want) {
+	if err := reg.Handler(context.Background(), rec); !errors.Is(err, want) {
 		t.Fatalf("err = %v, want %v", err, want)
 	}
 }
@@ -72,7 +73,7 @@ func TestTopicBrokenValueIsPermanent(t *testing.T) {
 		Sum string `json:"sum"`
 	}
 
-	wrongSchema := envelope.New("order", "order-1", 1, envelope.OpCreate, &otherOrder{Sum: "сто"}).
+	wrongSchema := message.New("id", "order", "order-1", 1, message.OpCreate, &otherOrder{Sum: "сто"}).
 		WithSource("orders-service", "v1")
 
 	// Конверт без Source: Encode такой не выпустит, но приехать он может -
@@ -87,7 +88,7 @@ func TestTopicBrokenValueIsPermanent(t *testing.T) {
 
 	var called bool
 
-	reg := Topic("orders", 1, func(context.Context, envelope.Envelope[order]) error {
+	reg := inbox.RegisterTypedHandler("orders", func(context.Context, message.Message[order]) error {
 		called = true
 
 		return nil
@@ -97,8 +98,8 @@ func TestTopicBrokenValueIsPermanent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			called = false
 
-			err := reg.handler(context.Background(), &kgo.Record{Value: value})
-			if !errors.Is(err, consumer.ErrPermanent) {
+			err := reg.Handler(context.Background(), &kgo.Record{Value: value})
+			if !errors.Is(err, backoff.ErrPermanent) {
 				t.Fatalf("err = %v, want to wrap consumer.ErrPermanent", err)
 			}
 
@@ -111,12 +112,12 @@ func TestTopicBrokenValueIsPermanent(t *testing.T) {
 
 // Топика, партиции и офсета в конверте нет: их достают из ctx
 func TestRecordFrom(t *testing.T) {
-	want := &kgo.Record{Topic: "orders", Partition: 3, Offset: 42, Value: encode(t, testEnvelope(t, 1))}
+	want := &kgo.Record{Topic: "orders", Partition: 3, Offset: 42, Value: encode(t, testMessage(t, 1))}
 
 	var got *kgo.Record
 
-	reg := Topic("orders", 1, func(ctx context.Context, _ envelope.Envelope[order]) error {
-		r, ok := RecordFrom(ctx)
+	reg := inbox.RegisterTypedHandler("orders", func(ctx context.Context, _ message.Message[order]) error {
+		r, ok := inbox.RecordFrom(ctx)
 		if !ok {
 			t.Error("record not found in ctx")
 		}
@@ -126,7 +127,7 @@ func TestRecordFrom(t *testing.T) {
 		return nil
 	})
 
-	if err := reg.handler(context.Background(), want); err != nil {
+	if err := reg.Handler(context.Background(), want); err != nil {
 		t.Fatalf("handler: %v", err)
 	}
 
@@ -137,7 +138,7 @@ func TestRecordFrom(t *testing.T) {
 
 // Вне хендлера записи в контексте нет, и это не паника
 func TestRecordFromEmptyContext(t *testing.T) {
-	if r, ok := RecordFrom(context.Background()); ok || r != nil {
+	if r, ok := inbox.RecordFrom(context.Background()); ok || r != nil {
 		t.Fatalf("record = %+v, ok = %v, want nil, false", r, ok)
 	}
 }
@@ -146,7 +147,7 @@ func TestRecordFromEmptyContext(t *testing.T) {
 func TestRawTopic(t *testing.T) {
 	var got *kgo.Record
 
-	reg := RawTopic("cdc.orders", 2, func(_ context.Context, r *kgo.Record) error {
+	reg := inbox.RegisterRawHandler("cdc.orders", func(_ context.Context, r *kgo.Record) error {
 		got = r
 
 		return nil
@@ -154,7 +155,7 @@ func TestRawTopic(t *testing.T) {
 
 	want := &kgo.Record{Topic: "cdc.orders", Value: []byte("not an envelope at all")}
 
-	if err := reg.handler(context.Background(), want); err != nil {
+	if err := reg.Handler(context.Background(), want); err != nil {
 		t.Fatalf("handler: %v", err)
 	}
 
@@ -162,7 +163,7 @@ func TestRawTopic(t *testing.T) {
 		t.Fatalf("record = %+v, want %+v", got, want)
 	}
 
-	if reg.topic != "cdc.orders" || reg.poolSize != 2 {
-		t.Fatalf("registration = %+v, want cdc.orders with pool 2", reg)
+	if reg.Topic != "cdc.orders" {
+		t.Fatalf("registration = %+v, want cdc.orders", reg)
 	}
 }

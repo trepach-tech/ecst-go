@@ -6,7 +6,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/trepach-tech/ecst-go/ecst"
+	"github.com/trepach-tech/ecst-go/outbox"
 )
 
 // memStore - реализация [ecst.OutboxStore] в памяти: хватает, чтоб увидеть
@@ -28,7 +28,7 @@ type memStore struct {
 // row - строка таблицы. Отправленные и битые строки не удаляются, а помечаются:
 // так видно, что с событием стало
 type row struct {
-	msg    ecst.OutboxRecord
+	msg    outbox.OutboxMessage
 	sent   bool
 	failed bool
 }
@@ -38,7 +38,7 @@ func newMemStore() *memStore {
 }
 
 // Add изображает вставку события в таблицу в транзакции бизнес-логики
-func (s *memStore) Add(msg ecst.OutboxRecord) {
+func (s *memStore) Add(msg outbox.OutboxMessage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -47,11 +47,11 @@ func (s *memStore) Add(msg ecst.OutboxRecord) {
 
 // Fetch отдает неотправленные строки в порядке вставки: порядок событий
 // одной сущности должен сохраняться
-func (s *memStore) Fetch(_ context.Context, limit int) ([]ecst.OutboxRecord, error) {
+func (s *memStore) Fetch(_ context.Context, limit int) ([]outbox.OutboxMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	msgs := make([]ecst.OutboxRecord, 0, limit)
+	msgs := make([]outbox.OutboxMessage, 0, limit)
 
 	for _, r := range s.rows {
 		if r.sent || r.failed {

@@ -3,6 +3,7 @@ package backoff
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // ErrPermanent - ошибка, которую бессмысленно повторять: битый формат,
@@ -17,37 +18,36 @@ var ErrPermanent = errors.New("permanent error")
 // Сам по себе повтор без задержки бесполезен: все попытки выгорают
 // за миллисекунды, пока лежит база или соседний сервис
 type Retry struct {
-	// Задержка между попытками
-	Config
+	// Пауза между попытками
+	Backoff Backoff
 
-	// Сколько раз пытаться всего. 1 и меньше - без повторов
-	Attempts int
-
-	// Ошибки, на которых повторять бессмысленно, помимо [ErrPermanent]:
-	// им классифицируют чужие ошибки, которые про этот сентинел не знают -
-	// например окончательный отказ брокера.
+	// Permanent определяет, является ли ошибка окончательной и не требующей повторной попытки,
+	// помимо ошибок, соответствующих ErrPermanent.
+	// Используется для классификации ошибок сторонних библиотек, которые не используют ErrPermanent.
 	//
-	// nil - повторяется все, кроме [ErrPermanent]
+	// Если nil, окончательными считаются только ошибки, соответствующие ErrPermanent.
 	Permanent func(error) bool
-
-	// Вызывается перед каждой задержкой: место для лога.
-	// attempt - номер только что провалившейся попытки
-	//
-	// nil - молча
-	OnRetry func(attempt int, err error)
 }
 
-// Do повторяет op, пока она не пройдет или не кончатся попытки.
+// Do повторяет op, пока операция не выполнится или не закончатся попытки.
 //
-// Возвращает ошибку последней попытки. Прерывается сразу на [ErrPermanent],
-// на [Retry.Permanent] и на отмене ctx: отмена во время ожидания - штатная остановка,
-// и она приезжает вместе с исходной ошибкой
-func (r Retry) Do(ctx context.Context, op func() error) error {
+// Возвращает ошибку последней попытки. Прерывает повторы при ErrPermanent,
+// при ошибке, для которой Retry.Permanent возвращает true, или при отмене ctx.
+// Если ctx отменён во время ожидания, возвращает исходную ошибку вместе
+// с ошибкой отмены.
+//
+// onRetry вызывается перед ожиданием следующей попытки после ошибки.
+// attempt — номер неудачной попытки.
+// Если nil, callback не вызывается.
+func (r Retry) Do(
+	ctx context.Context,
+	attempts int,
+	op func() error,
+	onRetry func(attempt int, err error),
+) error {
 	var err error
 
-	// Нулевой Attempts - это забытое поле, а не "не вызывать op":
-	// молча вернуть nil, не сделав работу, хуже любой ошибки
-	attempts := max(r.Attempts, 1)
+	attempts = r.attempts(attempts)
 
 	for attempt := 1; attempt <= attempts; attempt++ {
 		if err = op(); err == nil {
@@ -58,8 +58,8 @@ func (r Retry) Do(ctx context.Context, op func() error) error {
 			break
 		}
 
-		if r.OnRetry != nil {
-			r.OnRetry(attempt, err)
+		if onRetry != nil {
+			onRetry(attempt, err)
 		}
 
 		if waitErr := r.wait(ctx, attempt); waitErr != nil {
@@ -68,6 +68,25 @@ func (r Retry) Do(ctx context.Context, op func() error) error {
 	}
 
 	return err
+}
+
+// wait ждет [Backoff.Delay] или отмену ctx
+func (r Retry) wait(ctx context.Context, attempt int) error {
+	t := time.NewTimer(r.Backoff.Delay(attempt))
+	defer t.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+func (r Retry) attempts(attempts int) int {
+	// Нулевой Attempts - это забытое поле, а не "не вызывать op":
+	// молча вернуть nil, не сделав работу, хуже любой ошибки
+	return max(attempts, 1)
 }
 
 // permanent - стоит ли вообще повторять эту ошибку

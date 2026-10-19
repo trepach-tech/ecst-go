@@ -1,4 +1,4 @@
-package envelope
+package message
 
 import (
 	"encoding/json"
@@ -27,29 +27,48 @@ func (o Op) known() bool {
 
 // hasPayload - обязан ли конверт с такой операцией нести payload.
 // Delete только сообщает, что сущности больше нет: состояния у нее уже не бывает
+// Нужен был проверки полноо удаления из сущности (отсутсвие payload означало tomstone Для кафки - удаление всех записей с этим ключом)
 func (o Op) hasPayload() bool { return o != OpDelete }
 
 const (
 	OpCreate Op = "c" // сущность создана
+	OpRead   Op = "r" // снимок текущего состояния: бэкфилл, первичная загрузка
 	OpUpdate Op = "u" // состояние сущности изменилось
 	OpDelete Op = "d" // сущность удалена, payload не нужен
-	OpRead   Op = "r" // снимок текущего состояния: бэкфилл, первичная загрузка
+
 )
 
-// Envelope - событие вместе со всем, что нужно его получателю:
+// New собирает конверт с текущим временем.
+//
+// Source обязателен и выставляется отдельно - [Envelope.WithSource]:
+// без него конверт не пройдет [Message.Validate]
+func New[T any](idempotenceKey, entityType, entityID string, version int64, op Op, payload *T) Message[T] {
+	return Message[T]{
+		IdempotenceKey: idempotenceKey,
+		EntityType:     entityType,
+		EntityID:       entityID,
+		Version:        version,
+		Op:             op,
+		Payload:        payload,
+		Timestamp:      time.Now().UTC(),
+	}
+}
+
+// Message - событие вместе со всем, что нужно его получателю:
 // какая сущность, какой версии, что с ней случилось и кто об этом сообщил.
 //
 // В ECST payload - полное состояние сущности, а не дельта: получатель
 // должен уметь собрать свою копию, ничего не доспрашивая
-type Envelope[T any] struct {
-	EntityType string    `json:"entity_type"`
-	EntityID   string    `json:"entity_id"`
-	Version    int64     `json:"version"`
-	Op         Op        `json:"op"`
-	Payload    *T        `json:"payload,omitempty"`
-	Timestamp  time.Time `json:"timestamp"`
-	TraceID    string    `json:"trace_id,omitempty"`
-	Source     Source    `json:"source"`
+type Message[T any] struct {
+	IdempotenceKey string    `json:"id"`
+	EntityType     string    `json:"entity_type"`
+	EntityID       string    `json:"entity_id"`
+	Version        int64     `json:"version"`
+	Op             Op        `json:"op"`
+	Payload        *T        `json:"payload,omitempty"`
+	Timestamp      time.Time `json:"timestamp"`
+	TraceID        string    `json:"trace_id,omitempty"`
+	Source         Source    `json:"source"`
 }
 
 // Source - кто опубликовал событие и по какой версии схемы
@@ -58,31 +77,16 @@ type Source struct {
 	SchemaVer string `json:"schema_ver"`
 }
 
-// New собирает конверт с текущим временем.
-//
-// Source обязателен и выставляется отдельно - [Envelope.WithSource]:
-// без него конверт не пройдет [Envelope.Validate]
-func New[T any](entityType, entityID string, version int64, op Op, payload *T) Envelope[T] {
-	return Envelope[T]{
-		EntityType: entityType,
-		EntityID:   entityID,
-		Version:    version,
-		Op:         op,
-		Payload:    payload,
-		Timestamp:  time.Now().UTC(),
-	}
-}
-
 // WithSource заполняет [Source]. Без него получатель не знает,
 // кто отправил событие и по какой схеме читать его payload
-func (e Envelope[T]) WithSource(service, schemaVer string) Envelope[T] {
+func (e Message[T]) WithSource(service, schemaVer string) Message[T] {
 	e.Source = Source{Service: service, SchemaVer: schemaVer}
 
 	return e
 }
 
 // WithTraceID связывает событие с запросом, в котором оно родилось
-func (e Envelope[T]) WithTraceID(traceID string) Envelope[T] {
+func (e Message[T]) WithTraceID(traceID string) Message[T] {
 	e.TraceID = traceID
 
 	return e
@@ -93,7 +97,7 @@ func (e Envelope[T]) WithTraceID(traceID string) Envelope[T] {
 // Событие без EntityType, EntityID, Version или Source получатель
 // не сможет ни смаршрутизировать, ни прочитать, поэтому до брокера
 // такое доезжать не должно
-func (e Envelope[T]) Validate() error {
+func (e Message[T]) Validate() error {
 	const op = "Envelope.Validate"
 
 	var errs []error
@@ -141,7 +145,7 @@ func (e Envelope[T]) Validate() error {
 
 // Headers дублирует маршрутные поля конверта: по ним запись фильтруют
 // и трейсят, не разбирая payload
-func (e Envelope[T]) Headers() map[string]string {
+func (e Message[T]) Headers() map[string]string {
 	headers := map[string]string{
 		HeaderEntityType: e.EntityType,
 	}
@@ -154,7 +158,7 @@ func (e Envelope[T]) Headers() map[string]string {
 
 // Encode сериализует конверт в JSON, предварительно его проверив:
 // битый конверт дешевле поймать здесь, чем в каждом получателе
-func (e Envelope[T]) Encode() ([]byte, error) {
+func (e Message[T]) Encode() ([]byte, error) {
 	const op = "Envelope.Encode"
 
 	if err := e.Validate(); err != nil {
@@ -170,10 +174,10 @@ func (e Envelope[T]) Encode() ([]byte, error) {
 }
 
 // Decode разбирает конверт из JSON и проверяет его
-func Decode[T any](raw []byte) (Envelope[T], error) {
+func Decode[T any](raw []byte) (Message[T], error) {
 	const op = "envelope.Decode"
 
-	var e Envelope[T]
+	var e Message[T]
 
 	if err := json.Unmarshal(raw, &e); err != nil {
 		return e, fmt.Errorf("%s: %w", op, err)

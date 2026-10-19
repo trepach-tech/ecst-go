@@ -18,11 +18,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/trepach-tech/ecst-go/ecst"
+	"github.com/trepach-tech/ecst-go/inbox"
+	"github.com/trepach-tech/ecst-go/outbox"
 )
 
 const (
@@ -47,13 +50,13 @@ func main() {
 func run(ctx context.Context) error {
 	store := newMemStore()
 
-	svc, err := ecst.New(ecst.Config{
+	svc, err := ecst.New(slog.Default(), ecst.Config{
 		// Опция 1: outbox-воркер забирает события из таблицы
 		// и публикует их своим продюсером
-		Outbox: ecst.DefaultOutboxConfig(store, broker),
+		Outbox: outbox.DefaultConfig(store, broker),
 
 		// Опция 2: inbox-воркер поднимает пул консьюмеров на каждый топик
-		Inbox: inbox(),
+		Inbox: inboxConfig(),
 	})
 	if err != nil {
 		return err
@@ -68,15 +71,15 @@ func run(ctx context.Context) error {
 	return nil
 }
 
-func inbox() *ecst.InboxConfig {
-	cfg := ecst.DefaultInboxConfig(group, broker)
+func inboxConfig() *inbox.Config {
+	cfg := inbox.DefaultConfig(group, broker)
 
 	// ecst.Topic разбирает конверт за хендлер: битое событие уедет в DLQ
 	// сразу, без ретраев. Второй аргумент - размер пула консьюмеров
 	// на топик, 0 - взять InboxConfig.PoolSize
 	cfg.Register(
-		ecst.Topic(ordersTopic, 2, handleOrder),
-		ecst.Topic(usersTopic, 0, handleUser),
+		inbox.RegisterTypedHandler(ordersTopic, handleOrder),
+		inbox.RegisterTypedHandler(usersTopic, handleUser),
 	)
 
 	return cfg

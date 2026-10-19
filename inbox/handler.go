@@ -1,21 +1,41 @@
-package ecst
+package inbox
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/trepach-tech/ecst-go/consumer"
-	"github.com/trepach-tech/ecst-go/envelope"
+	"github.com/trepach-tech/ecst-go/backoff"
+	"github.com/trepach-tech/ecst-go/internal/consumer"
+	"github.com/trepach-tech/ecst-go/message"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
+
+// HandlerToRegister — готовый к регистрации через [Config.Register] handler к топику.
+type HandlerToRegister struct {
+	Topic   string
+	Handler consumer.Handler
+}
+
+// RegisterTypedHandler привязывает [TypedHandler] к топику
+func RegisterTypedHandler[T any](topic string, h TypedHandler[T]) HandlerToRegister {
+	return HandlerToRegister{Topic: topic, Handler: toConsumerHandler(h)}
+}
+
+// RegisterRawHandler привязывает к топику [consumer.Handler].
+//
+// Нужен для топиков, в которых лежит не [envelope.Envelope].
+// Например: чужой сервис, legacy-формат, CDC от Debezium. Для своих событий есть [RegisterTypedHandler]
+func RegisterRawHandler(topic string, h consumer.Handler) HandlerToRegister {
+	return HandlerToRegister{Topic: topic, Handler: h}
+}
 
 // TypedHandler — типизированный [consumer.Handler].
 // Такой handler получает декодированный [envelope.Envelope], а не [kgo.Record].
 //
 // К нему применяются те же требования, что и к [consumer.Handler].
-type TypedHandler[T any] func(ctx context.Context, e envelope.Envelope[T]) error
+type TypedHandler[T any] func(ctx context.Context, e message.Message[T]) error
 
-func decode[T any](h TypedHandler[T]) consumer.Handler {
+func toConsumerHandler[T any](h TypedHandler[T]) consumer.Handler {
 	return func(ctx context.Context, r *kgo.Record) error {
 		// Топик, партиция и офсет в конверте не лежат, а для логов нужны:
 		// кладем запись в ctx, чтоб не тащить ее в сигнатуру каждого хендлера
@@ -23,16 +43,16 @@ func decode[T any](h TypedHandler[T]) consumer.Handler {
 
 		// Разбор сразу в T, а не через [envelope.Raw]: иначе один и тот же
 		// конверт пришлось бы разбирать и валидировать дважды на каждую запись
-		e, err := envelope.Decode[T](r.Value)
+		e, err := message.Decode[T](r.Value)
 		if err != nil {
-			return fmt.Errorf("ecst: %w: %w", err, consumer.ErrPermanent)
+			return fmt.Errorf("ecst: %w: %w", err, backoff.ErrPermanent)
 		}
 
 		return h(ctx, e)
 	}
 }
 
-// Ключ записи в ctx. Свой тип, чтоб не столкнуться с чужими значениями
+// Ключ записи в ctx.
 type recordKey struct{}
 
 func withRecord(ctx context.Context, r *kgo.Record) context.Context {

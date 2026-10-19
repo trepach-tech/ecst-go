@@ -74,7 +74,7 @@ type Config struct {
 	Acks Acks
 
 	// Задержка между повторными попытками отправки
-	Backoff backoff.Config
+	Backoff backoff.Backoff
 
 	// Общее время "жизни" записи (сумма всех ретраев)
 	RecordDeliveryTimeout time.Duration

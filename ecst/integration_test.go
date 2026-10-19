@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trepach-tech/ecst-go/inbox"
+	"github.com/trepach-tech/ecst-go/message"
+	"github.com/trepach-tech/ecst-go/outbox"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 
 	"github.com/trepach-tech/ecst-go/backoff"
-	"github.com/trepach-tech/ecst-go/consumer"
-	"github.com/trepach-tech/ecst-go/envelope"
 )
 
 // Тесты требуют живого брокера: весь смысл модуля - в том, что события
@@ -110,13 +111,13 @@ type roundStore struct {
 }
 
 type storeRow struct {
-	msg    OutboxRecord
+	msg    outbox.OutboxMessage
 	sent   bool
 	failed bool
 	cause  error
 }
 
-func newRoundStore(msgs ...OutboxRecord) *roundStore {
+func newRoundStore(msgs ...outbox.OutboxMessage) *roundStore {
 	s := &roundStore{rows: make([]storeRow, 0, len(msgs))}
 	for _, m := range msgs {
 		s.rows = append(s.rows, storeRow{msg: m})
@@ -125,11 +126,11 @@ func newRoundStore(msgs ...OutboxRecord) *roundStore {
 	return s
 }
 
-func (s *roundStore) Fetch(_ context.Context, limit int) ([]OutboxRecord, error) {
+func (s *roundStore) Fetch(_ context.Context, limit int) ([]outbox.OutboxMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	msgs := make([]OutboxRecord, 0, limit)
+	msgs := make([]outbox.OutboxMessage, 0, limit)
 
 	for _, r := range s.rows {
 		if r.sent || r.failed || len(msgs) == limit {
@@ -185,10 +186,10 @@ func (s *roundStore) state(id string) (sent, failed bool, cause error) {
 	return false, false, nil
 }
 
-// testOutbox - outbox с короткими паузами: ждать секундного PollInterval
+// testOutboxConfigWithShortBackoff - outbox config с короткими паузами: ждать секундного PollInterval
 // и пятнадцатисекундной доставки в тестах незачем
-func testOutbox(store OutboxStore, brokers []string) *OutboxConfig {
-	cfg := DefaultOutboxConfig(store, brokers...)
+func testOutboxConfigWithShortBackoff(store outbox.Store, brokers []string) *outbox.Config {
+	cfg := outbox.DefaultConfig(store, brokers...)
 	cfg.PollInterval = 50 * time.Millisecond
 	cfg.StoreMaxAttempts = 1
 	cfg.Backoff = fastBackoff()
@@ -197,28 +198,29 @@ func testOutbox(store OutboxStore, brokers []string) *OutboxConfig {
 	return cfg
 }
 
-// testInbox - inbox с короткими паузами и одним консьюмером на топик
-func testInbox(group string, brokers []string, regs ...Registration) *InboxConfig {
-	cfg := DefaultInboxConfig(group, brokers...)
-	cfg.Consumer.HandlerMaxAttempts = 1
-	cfg.Consumer.DLQMaxAttempts = 1
-	cfg.Consumer.Backoff = fastBackoff()
-	cfg.Consumer.FetchMaxWait = 50 * time.Millisecond
+// testInboxConfigWithShortBackoff - inbox config с короткими паузами
+func testInboxConfigWithShortBackoff(group string, brokers []string, regs ...inbox.HandlerToRegister) *inbox.Config {
+	cfg := inbox.DefaultConfig(group, brokers...)
+	cfg.ConsumerConfigTemplate.ProcessorConfig.HandlerMaxAttempts = 1
+	cfg.ConsumerConfigTemplate.ProcessorConfig.DLQMaxAttempts = 1
+	cfg.ConsumerConfigTemplate.ProcessorConfig.Backoff = fastBackoff()
+	cfg.ConsumerConfigTemplate.ClientBackoff = fastBackoff()
+	cfg.ConsumerConfigTemplate.FetchMaxWait = 50 * time.Millisecond
 	cfg.HandlerTimeout = 10 * time.Second
 	cfg.Register(regs...)
 
 	return cfg
 }
 
-func fastBackoff() backoff.Config {
-	return backoff.Config{Min: time.Millisecond, Max: time.Millisecond, Factor: 1}
+func fastBackoff() backoff.Backoff {
+	return backoff.Backoff{Min: time.Millisecond, Max: time.Millisecond, Factor: 1}
 }
 
 // runService поднимает сервис в фоне и гасит его по завершении теста
 func runService(t *testing.T, cfg Config) *Service {
 	t.Helper()
 
-	svc, err := New(cfg)
+	svc, err := New(slog.Default(), cfg)
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
@@ -240,14 +242,18 @@ func runService(t *testing.T, cfg Config) *Service {
 	return svc
 }
 
-func outboxMessage(t *testing.T, id, topic string, version int64) OutboxRecord {
+type order struct {
+	Sum int `json:"sum"`
+}
+
+func outboxMessage(t *testing.T, id, topic string, version int64) outbox.OutboxMessage {
 	t.Helper()
 
-	e := envelope.New("order", "order-1", version, envelope.OpUpdate, &order{Sum: 100 * int(version)}).
+	e := message.New(id, "order", "order-1", version, message.OpUpdate, &order{Sum: 100 * int(version)}).
 		WithSource("orders-service", "v1").
 		WithTraceID(fmt.Sprintf("trace-%d", version))
 
-	msg, err := NewOutboxRecordFromEnvelope(id, topic, e)
+	msg, err := outbox.NewOutboxMessage(topic, e)
 	if err != nil {
 		t.Fatalf("new outbox message: %v", err)
 	}
@@ -263,18 +269,18 @@ func TestIntegrationOutboxToInbox(t *testing.T) {
 
 	const events = 5
 
-	msgs := make([]OutboxRecord, 0, events)
+	msgs := make([]outbox.OutboxMessage, 0, events)
 	for i := 1; i <= events; i++ {
 		msgs = append(msgs, outboxMessage(t, fmt.Sprintf("row-%d", i), topic, int64(i)))
 	}
 
 	store := newRoundStore(msgs...)
-	got := make(chan envelope.Envelope[order], events)
+	got := make(chan message.Message[order], events)
 
 	runService(t, Config{
-		Outbox: testOutbox(store, brokers),
-		Inbox: testInbox(t.Name(), brokers, Topic(topic, 1,
-			func(_ context.Context, e envelope.Envelope[order]) error {
+		Outbox: testOutboxConfigWithShortBackoff(store, brokers),
+		Inbox: testInboxConfigWithShortBackoff(t.Name(), brokers, inbox.RegisterTypedHandler(topic,
+			func(_ context.Context, e message.Message[order]) error {
 				got <- e
 
 				return nil
@@ -330,12 +336,12 @@ func TestIntegrationOutboxMarksBrokenRowFailed(t *testing.T) {
 	good := outboxMessage(t, "row-good", topic, 2)
 
 	store := newRoundStore(broken, good)
-	got := make(chan envelope.Envelope[order], 1)
+	got := make(chan message.Message[order], 1)
 
 	runService(t, Config{
-		Outbox: testOutbox(store, brokers),
-		Inbox: testInbox(t.Name(), brokers, Topic(topic, 1,
-			func(_ context.Context, e envelope.Envelope[order]) error {
+		Outbox: testOutboxConfigWithShortBackoff(store, brokers),
+		Inbox: testInboxConfigWithShortBackoff(t.Name(), brokers, inbox.RegisterTypedHandler(topic,
+			func(_ context.Context, e message.Message[order]) error {
 				got <- e
 
 				return nil
@@ -372,14 +378,14 @@ func TestIntegrationInboxSendsBrokenEventToDLQ(t *testing.T) {
 	topics := testTopics(t, brokers, 1, "orders", "orders.dlq")
 	topic, dlqTopic := topics[0], topics[1]
 
-	inbox := testInbox(t.Name(), brokers, Topic(topic, 1,
-		func(_ context.Context, e envelope.Envelope[order]) error {
+	inboxWorkerConfig := testInboxConfigWithShortBackoff(t.Name(), brokers, inbox.RegisterTypedHandler(topic,
+		func(_ context.Context, e message.Message[order]) error {
 			return nil
 		},
 	))
 	// Имя DLQ-топика по умолчанию - topic + ".dlq", но имена в тестах
 	// уникальны, поэтому указываем явно
-	inbox.DLQTopic = func(string) string { return dlqTopic }
+	inboxWorkerConfig.CustomDLQTopic = func(string) string { return dlqTopic }
 
 	store := newRoundStore(outboxMessage(t, "row-1", topic, 1))
 
@@ -388,8 +394,8 @@ func TestIntegrationInboxSendsBrokenEventToDLQ(t *testing.T) {
 	produceRaw(t, brokers, &kgo.Record{Topic: topic, Key: []byte("order-1"), Value: []byte("not an envelope")})
 
 	runService(t, Config{
-		Outbox: testOutbox(store, brokers),
-		Inbox:  inbox,
+		Outbox: testOutboxConfigWithShortBackoff(store, brokers),
+		Inbox:  inboxWorkerConfig,
 	})
 
 	// В DLQ приехала та самая запись, с метаданными происхождения
@@ -404,11 +410,11 @@ func TestIntegrationInboxSendsBrokenEventToDLQ(t *testing.T) {
 		headers[h.Key] = string(h.Value)
 	}
 
-	if headers[consumer.HeaderDLQTopic] != topic {
-		t.Errorf("%s = %q, want %q", consumer.HeaderDLQTopic, headers[consumer.HeaderDLQTopic], topic)
+	if headers[inbox.HeaderDLQTopic] != topic {
+		t.Errorf("%s = %q, want %q", inbox.HeaderDLQTopic, headers[inbox.HeaderDLQTopic], topic)
 	}
-	if headers[consumer.HeaderDLQError] == "" {
-		t.Errorf("%s is empty, want the reason the record failed", consumer.HeaderDLQError)
+	if headers[inbox.HeaderDLQError] == "" {
+		t.Errorf("%s is empty, want the reason the record failed", inbox.HeaderDLQError)
 	}
 
 	// Партиция не встала: событие из outbox доехало после битого
@@ -499,12 +505,12 @@ func TestIntegrationOutboxUndeliveredRowDoesNotBlockBatch(t *testing.T) {
 	good := outboxMessage(t, "row-good", topic, 2)
 
 	store := newRoundStore(missing, good)
-	got := make(chan envelope.Envelope[order], 8)
+	got := make(chan message.Message[order], 8)
 
 	runService(t, Config{
-		Outbox: testOutbox(store, brokers),
-		Inbox: testInbox(t.Name(), brokers, Topic(topic, 1,
-			func(_ context.Context, e envelope.Envelope[order]) error {
+		Outbox: testOutboxConfigWithShortBackoff(store, brokers),
+		Inbox: testInboxConfigWithShortBackoff(t.Name(), brokers, inbox.RegisterTypedHandler(topic,
+			func(_ context.Context, e message.Message[order]) error {
 				got <- e
 
 				return nil

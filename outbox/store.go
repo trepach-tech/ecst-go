@@ -1,17 +1,17 @@
-package ecst
+package outbox
 
 import "context"
 
-// OutboxStore - доступ к outbox-таблице.
+// Store - доступ к outbox-таблице.
 //
 // Реализация живет на стороне приложения: только оно знает свою схему и БД
-type OutboxStore interface {
+type Store interface {
 	// Fetch забирает до limit неотправленных сообщений в порядке их записи.
 	//
 	// Должен блокировать выбранные строки (SELECT ... FOR UPDATE SKIP LOCKED
 	// или флаг "в обработке"), иначе несколько инстансов сервиса опубликуют
 	// одни и те же события
-	Fetch(ctx context.Context, limit int) ([]OutboxRecord, error)
+	Fetch(ctx context.Context, limit int) ([]OutboxMessage, error)
 
 	// MarkSent помечает сообщения опубликованными: удаляет строки
 	// или проставляет sent_at.

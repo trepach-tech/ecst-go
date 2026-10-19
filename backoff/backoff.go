@@ -2,14 +2,13 @@
 package backoff
 
 import (
-	"context"
 	"errors"
 	"math"
 	"math/rand/v2"
 	"time"
 )
 
-type Config struct {
+type Backoff struct {
 	// Задержка перед первой повторной попыткой
 	Min time.Duration
 
@@ -28,8 +27,8 @@ type Config struct {
 }
 
 // Default возвращает бэкофф с разумными значениями по умолчанию
-func Default() Config {
-	return Config{
+func Default() Backoff {
+	return Backoff{
 		Min:    250 * time.Millisecond,
 		Max:    5 * time.Second,
 		Factor: 2,
@@ -37,8 +36,26 @@ func Default() Config {
 	}
 }
 
+// Delay - задержка перед повторной attempt (первая повторная - 1)
+func (c Backoff) Delay(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+
+	d := float64(c.Min) * math.Pow(c.Factor, float64(attempt-1))
+
+	// Pow на больших attempt уходит в +Inf, поэтому режем до потолка явно
+	if math.IsInf(d, 1) || d > float64(c.Max) {
+		d = float64(c.Max)
+	}
+
+	d -= d * c.Jitter * rand.Float64()
+
+	return time.Duration(d)
+}
+
 // Validate проверяет конфиг и возвращает все найденные проблемы разом
-func (c Config) Validate() error {
+func (c Backoff) Validate() error {
 	var errs []error
 	add := func(msg string) { errs = append(errs, errors.New("backoff: "+msg)) }
 
@@ -59,35 +76,4 @@ func (c Config) Validate() error {
 	}
 
 	return errors.Join(errs...)
-}
-
-// Delay - задержка перед повторной попыткой attempt (первая повторная - 1)
-func (c Config) Delay(attempt int) time.Duration {
-	if attempt < 1 {
-		attempt = 1
-	}
-
-	d := float64(c.Min) * math.Pow(c.Factor, float64(attempt-1))
-
-	// Pow на больших attempt уходит в +Inf, поэтому режем до потолка явно
-	if math.IsInf(d, 1) || d > float64(c.Max) {
-		d = float64(c.Max)
-	}
-
-	d -= d * c.Jitter * rand.Float64()
-
-	return time.Duration(d)
-}
-
-// wait ждет [Config.Delay] или отмену ctx
-func (c Config) wait(ctx context.Context, attempt int) error {
-	t := time.NewTimer(c.Delay(attempt))
-	defer t.Stop()
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-t.C:
-		return nil
-	}
 }
