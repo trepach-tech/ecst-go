@@ -249,7 +249,7 @@ type order struct {
 func outboxMessage(t *testing.T, id, topic string, version int64) outbox.OutboxMessage {
 	t.Helper()
 
-	e := message.New(id, "order", "order-1", version, message.OpUpdate, &order{Sum: 100 * int(version)}).
+	e := message.New(id, "order-1", "order", version, message.OpUpdate, &order{Sum: 100 * int(version)}).
 		WithSource("orders-service", "v1").
 		WithTraceID(fmt.Sprintf("trace-%d", version))
 
