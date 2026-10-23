@@ -22,22 +22,22 @@ type OutboxMessage struct {
 }
 
 // NewOutboxMessage собирает запись outbox-таблицы из типизированного конверта.
-func NewOutboxMessage[T any](topic string, e message.Message[T]) (OutboxMessage, error) {
-	if e.IdempotenceKey == "" {
-		return OutboxMessage{}, errors.New("ecst: outbox message id is required")
+func NewOutboxMessage[T any](topic string, m message.Message[T]) (OutboxMessage, error) {
+	if m.IdempotenceKey == "" {
+		return OutboxMessage{}, errors.New("ecst: outbox message idempotence key is required")
 	}
 	if topic == "" {
 		return OutboxMessage{}, errors.New("ecst: outbox message topic is required")
 	}
 
 	// ToRaw валидирует конверт сам: до таблицы битое событие не доедет
-	raw, err := message.ToRaw(e)
+	raw, err := message.ToRaw(m)
 	if err != nil {
 		return OutboxMessage{}, fmt.Errorf("ecst: %w", err)
 	}
 
 	return OutboxMessage{
-		ID:         e.IdempotenceKey,
+		ID:         m.IdempotenceKey,
 		Topic:      topic,
 		RawMessage: raw,
 	}, nil
@@ -65,7 +65,7 @@ func (m OutboxMessage) Record() (*kgo.Record, error) {
 
 	return &kgo.Record{
 		Topic:   m.Topic,
-		Key:     []byte(m.RawMessage.EntityID),
+		Key:     []byte(m.RawMessage.Key),
 		Value:   value,
 		Headers: headers,
 	}, nil

@@ -18,21 +18,22 @@ type Raw = Message[json.RawMessage]
 //
 // Так типизированное событие кладут в очередь или таблицу, которая
 // про его тип ничего не знает
-func ToRaw[T any](e Message[T]) (Raw, error) {
+func ToRaw[T any](m Message[T]) (Raw, error) {
 	const op = "envelope.ToRaw"
 
 	raw := Raw{
-		EntityType: e.EntityType,
-		EntityID:   e.EntityID,
-		Version:    e.Version,
-		Op:         e.Op,
-		Timestamp:  e.Timestamp,
-		TraceID:    e.TraceID,
-		Source:     e.Source,
+		IdempotenceKey: m.IdempotenceKey,
+		Key:            m.Key,
+		EntityType:     m.EntityType,
+		Version:        m.Version,
+		Op:             m.Op,
+		Timestamp:      m.Timestamp,
+		TraceID:        m.TraceID,
+		Source:         m.Source,
 	}
 
-	if e.Payload != nil {
-		payload, err := json.Marshal(e.Payload)
+	if m.Payload != nil {
+		payload, err := json.Marshal(m.Payload)
 		if err != nil {
 			return Raw{}, fmt.Errorf("%s: %w", op, err)
 		}
@@ -54,14 +55,15 @@ func ToRaw[T any](e Message[T]) (Raw, error) {
 func FromRaw[T any](raw Raw) (Message[T], error) {
 	const op = "envelope.FromRaw"
 
-	e := Message[T]{
-		EntityType: raw.EntityType,
-		EntityID:   raw.EntityID,
-		Version:    raw.Version,
-		Op:         raw.Op,
-		Timestamp:  raw.Timestamp,
-		TraceID:    raw.TraceID,
-		Source:     raw.Source,
+	m := Message[T]{
+		IdempotenceKey: raw.IdempotenceKey,
+		Key:            raw.Key,
+		EntityType:     raw.EntityType,
+		Version:        raw.Version,
+		Op:             raw.Op,
+		Timestamp:      raw.Timestamp,
+		TraceID:        raw.TraceID,
+		Source:         raw.Source,
 	}
 
 	if raw.Payload != nil {
@@ -70,12 +72,12 @@ func FromRaw[T any](raw Raw) (Message[T], error) {
 			return Message[T]{}, fmt.Errorf("%s: %w", op, err)
 		}
 
-		e.Payload = &payload
+		m.Payload = &payload
 	}
 
-	if err := e.Validate(); err != nil {
+	if err := m.Validate(); err != nil {
 		return Message[T]{}, fmt.Errorf("%s: %w", op, err)
 	}
 
-	return e, nil
+	return m, nil
 }

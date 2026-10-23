@@ -106,7 +106,7 @@ func testWorker(t *testing.T, store *fakeStore) *Worker {
 func testMessage(t *testing.T, version int64) message.Message[order] {
 	t.Helper()
 
-	return message.New("id", "order", "order-1", version, message.OpCreate, &order{Sum: 100}).
+	return message.New("id", "order-1", "order", version, message.OpCreate, &order{Sum: 100}).
 		WithSource("orders-service", "v1")
 }
 
