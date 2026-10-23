@@ -113,7 +113,7 @@ func TestValidateDeleteWithoutPayload(t *testing.T) {
 }
 
 func TestHeaders(t *testing.T) {
-	h := New("id", "order", "order-1", 1, OpCreate, &order{}).
+	h := New("id", "order-1", "order", 1, OpCreate, &order{}).
 		WithSource("orders-service", "v1").
 		WithTraceID("trace-1").
 		Headers()
