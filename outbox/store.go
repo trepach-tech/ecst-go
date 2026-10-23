@@ -1,6 +1,8 @@
 package outbox
 
-import "context"
+import (
+	"context"
+)
 
 // Store - доступ к outbox-таблице.
 //
@@ -29,4 +31,8 @@ type Store interface {
 	// Реализуют флагом failed_at + cause, отдельной таблицей-DLQ или
 	// счетчиком попыток; главное, чтоб Fetch такие строки больше не отдавал
 	MarkFailed(ctx context.Context, id string, cause error) error
+}
+
+type Writer interface {
+	Write(ctx context.Context, msg OutboxMessage) error
 }

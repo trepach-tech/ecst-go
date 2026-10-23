@@ -30,10 +30,12 @@ func RegisterRawHandler(topic string, h consumer.Handler) HandlerToRegister {
 }
 
 // TypedHandler — типизированный [consumer.Handler].
-// Такой handler получает декодированный [envelope.Envelope], а не [kgo.Record].
+// Такой handler получает декодированный [message.Message], а не [kgo.Record].
 //
 // К нему применяются те же требования, что и к [consumer.Handler].
-type TypedHandler[T any] func(ctx context.Context, e message.Message[T]) error
+type TypedHandler[T any] func(ctx context.Context, m message.Message[T]) error
+
+type RawHandler func(ctx context.Context, raw message.Raw) error
 
 func toConsumerHandler[T any](h TypedHandler[T]) consumer.Handler {
 	return func(ctx context.Context, r *kgo.Record) error {
@@ -41,14 +43,14 @@ func toConsumerHandler[T any](h TypedHandler[T]) consumer.Handler {
 		// кладем запись в ctx, чтоб не тащить ее в сигнатуру каждого хендлера
 		ctx = withRecord(ctx, r)
 
-		// Разбор сразу в T, а не через [envelope.Raw]: иначе один и тот же
+		// Разбор сразу в T, а не через [message.Raw]: иначе один и тот же
 		// конверт пришлось бы разбирать и валидировать дважды на каждую запись
-		e, err := message.Decode[T](r.Value)
+		m, err := message.Decode[T](r.Value)
 		if err != nil {
 			return fmt.Errorf("ecst: %w: %w", err, backoff.ErrPermanent)
 		}
 
-		return h(ctx, e)
+		return h(ctx, m)
 	}
 }
 

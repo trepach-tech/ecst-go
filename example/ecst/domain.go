@@ -82,13 +82,13 @@ func add[T any](store *memStore, id, topic string, m message.Message[T]) {
 // handleOrder применяет событие заказа к своей копии данных.
 //
 // Обязан быть идемпотентным: одно и то же событие может приехать повторно
-func handleOrder(ctx context.Context, e message.Message[Order]) error {
+func handleOrder(ctx context.Context, m message.Message[Order]) error {
 	attrs := []any{
-		"entity_id", e.EntityID,
-		"version", e.Version,
-		"op", e.Op,
-		"sum", e.Payload.Sum,
-		"trace_id", e.TraceID,
+		"key", m.Key,
+		"version", m.Version,
+		"op", m.Op,
+		"sum", m.Payload.Sum,
+		"trace_id", m.TraceID,
 	}
 
 	// Топика, партиции и офсета в конверте нет - их достают из ctx, когда нужны
@@ -103,18 +103,17 @@ func handleOrder(ctx context.Context, e message.Message[Order]) error {
 
 // handleUser применяет событие пользователя: у второго топика свой тип
 // payload и свой размер пула консьюмеров
-func handleUser(_ context.Context, e message.Message[User]) error {
+func handleUser(_ context.Context, m message.Message[User]) error {
 	// Delete приезжает без payload: состояния у удаленной сущности нет
-	if e.Op == message.OpDelete {
-		slog.Info("user deleted", "entity_id", e.EntityID, "version", e.Version)
+	if m.Op == message.OpDelete {
+		slog.Info("user deleted", "version", m.Version)
 
 		return nil
 	}
 
 	slog.Info("user applied",
-		"entity_id", e.EntityID,
-		"version", e.Version,
-		"email", e.Payload.Email,
+		"version", m.Version,
+		"email", m.Payload.Email,
 	)
 
 	return nil

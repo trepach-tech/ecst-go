@@ -24,8 +24,8 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 
-	if out.EntityType != in.EntityType || out.EntityID != in.EntityID {
-		t.Fatalf("entity = %s/%s, want %s/%s", out.EntityType, out.EntityID, in.EntityType, in.EntityID)
+	if out.EntityType != in.EntityType || out.Key != in.Key {
+		t.Fatalf("entity = %s/%s, want %s/%s", out.EntityType, out.Key, in.EntityType, in.Key)
 	}
 	if out.Version != in.Version || out.Op != in.Op {
 		t.Fatalf("version/op = %d/%s, want %d/%s", out.Version, out.Op, in.Version, in.Op)
@@ -81,7 +81,7 @@ func TestValidate(t *testing.T) {
 
 	tests := map[string]func(e *Message[order]){
 		"no entity type": func(e *Message[order]) { e.EntityType = "" },
-		"no entity id":   func(e *Message[order]) { e.EntityID = "" },
+		"no entity id":   func(e *Message[order]) { e.Key = "" },
 		"zero version":   func(e *Message[order]) { e.Version = 0 },
 		"no op":          func(e *Message[order]) { e.Op = "" },
 		"unknown op":     func(e *Message[order]) { e.Op = "x" },

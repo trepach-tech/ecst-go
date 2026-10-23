@@ -76,7 +76,7 @@ func (s *Service) OutboxProducer() *producer.Producer {
 //
 // Ошибку не возвращает: сбой одного батча или одной партиции не должен
 // ронять весь сервис, все такие случаи уезжают в лог и DLQ.
-func (s *Service) Run(ctx context.Context) {
+func (s *Service) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
 
 	if s.outbox != nil {
@@ -96,10 +96,11 @@ func (s *Service) Run(ctx context.Context) {
 	}
 
 	wg.Wait()
+	return nil
 }
 
 // Close останавливает [inbox.Worker] и [outbox.Worker]
-func (s *Service) Close(ctx context.Context) {
+func (s *Service) Close(ctx context.Context) error {
 	if s.inbox != nil {
 		s.inbox.Stop()
 	}
@@ -107,4 +108,6 @@ func (s *Service) Close(ctx context.Context) {
 	if s.outbox != nil {
 		s.outbox.Stop()
 	}
+
+	return nil
 }

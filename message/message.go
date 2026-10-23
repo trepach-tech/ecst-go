@@ -40,13 +40,13 @@ const (
 
 // New собирает конверт с текущим временем.
 //
-// Source обязателен и выставляется отдельно - [Envelope.WithSource]:
+// Source обязателен и выставляется отдельно - [Message.WithSource]:
 // без него конверт не пройдет [Message.Validate]
-func New[T any](idempotenceKey, entityType, entityID string, version int64, op Op, payload *T) Message[T] {
+func New[T any](idempotenceKey, key, entityType string, version int64, op Op, payload *T) Message[T] {
 	return Message[T]{
 		IdempotenceKey: idempotenceKey,
+		Key:            key,
 		EntityType:     entityType,
-		EntityID:       entityID,
 		Version:        version,
 		Op:             op,
 		Payload:        payload,
@@ -60,9 +60,9 @@ func New[T any](idempotenceKey, entityType, entityID string, version int64, op O
 // В ECST payload - полное состояние сущности, а не дельта: получатель
 // должен уметь собрать свою копию, ничего не доспрашивая
 type Message[T any] struct {
-	IdempotenceKey string    `json:"id"`
+	IdempotenceKey string    `json:"idempotence_key"`
+	Key            string    `json:"key"`
 	EntityType     string    `json:"entity_type"`
-	EntityID       string    `json:"entity_id"`
 	Version        int64     `json:"version"`
 	Op             Op        `json:"op"`
 	Payload        *T        `json:"payload,omitempty"`
@@ -79,17 +79,17 @@ type Source struct {
 
 // WithSource заполняет [Source]. Без него получатель не знает,
 // кто отправил событие и по какой схеме читать его payload
-func (e Message[T]) WithSource(service, schemaVer string) Message[T] {
-	e.Source = Source{Service: service, SchemaVer: schemaVer}
+func (m Message[T]) WithSource(service, schemaVer string) Message[T] {
+	m.Source = Source{Service: service, SchemaVer: schemaVer}
 
-	return e
+	return m
 }
 
 // WithTraceID связывает событие с запросом, в котором оно родилось
-func (e Message[T]) WithTraceID(traceID string) Message[T] {
-	e.TraceID = traceID
+func (m Message[T]) WithTraceID(traceID string) Message[T] {
+	m.TraceID = traceID
 
-	return e
+	return m
 }
 
 // Validate возвращает все найденные проблемы разом.
@@ -97,46 +97,46 @@ func (e Message[T]) WithTraceID(traceID string) Message[T] {
 // Событие без EntityType, EntityID, Version или Source получатель
 // не сможет ни смаршрутизировать, ни прочитать, поэтому до брокера
 // такое доезжать не должно
-func (e Message[T]) Validate() error {
+func (m Message[T]) Validate() error {
 	const op = "Envelope.Validate"
 
 	var errs []error
 	add := func(msg string) { errs = append(errs, fmt.Errorf("%s: %s", op, msg)) }
 
-	if e.EntityType == "" {
+	if m.EntityType == "" {
 		add("EntityType is required")
 	}
 
-	// EntityID - ключ партиционирования: без него события одной сущности
+	// Key - ключ партиционирования: без него события одной сущности
 	// разъедутся по партициям и потеряют порядок
-	if e.EntityID == "" {
-		add("EntityID is required")
+	if m.Key == "" {
+		add("Key is required")
 	}
 
 	// Version нужна получателю, чтоб отбрасывать уже примененные события
-	if e.Version <= 0 {
+	if m.Version <= 0 {
 		add("Version must be > 0")
 	}
 
 	switch {
-	case e.Op == "":
+	case m.Op == "":
 		add("Op is required")
-	case !e.Op.known():
-		add("unknown Op: " + string(e.Op))
-	case e.Op.hasPayload() && e.Payload == nil:
-		add("Payload is required for Op " + string(e.Op))
+	case !m.Op.known():
+		add("unknown Op: " + string(m.Op))
+	case m.Op.hasPayload() && m.Payload == nil:
+		add("Payload is required for Op " + string(m.Op))
 	}
 
 	// Без Source непонятно, кто отправил событие
 	// и по какой схеме читать его payload
-	if e.Source.Service == "" {
+	if m.Source.Service == "" {
 		add("Source.Service is required")
 	}
-	if e.Source.SchemaVer == "" {
+	if m.Source.SchemaVer == "" {
 		add("Source.SchemaVer is required")
 	}
 
-	if e.Timestamp.IsZero() {
+	if m.Timestamp.IsZero() {
 		add("Timestamp is required")
 	}
 
@@ -145,12 +145,12 @@ func (e Message[T]) Validate() error {
 
 // Headers дублирует маршрутные поля конверта: по ним запись фильтруют
 // и трейсят, не разбирая payload
-func (e Message[T]) Headers() map[string]string {
+func (m Message[T]) Headers() map[string]string {
 	headers := map[string]string{
-		HeaderEntityType: e.EntityType,
+		HeaderEntityType: m.EntityType,
 	}
-	if e.TraceID != "" {
-		headers[HeaderTraceID] = e.TraceID
+	if m.TraceID != "" {
+		headers[HeaderTraceID] = m.TraceID
 	}
 
 	return headers
@@ -158,14 +158,14 @@ func (e Message[T]) Headers() map[string]string {
 
 // Encode сериализует конверт в JSON, предварительно его проверив:
 // битый конверт дешевле поймать здесь, чем в каждом получателе
-func (e Message[T]) Encode() ([]byte, error) {
+func (m Message[T]) Encode() ([]byte, error) {
 	const op = "Envelope.Encode"
 
-	if err := e.Validate(); err != nil {
+	if err := m.Validate(); err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	raw, err := json.Marshal(e)
+	raw, err := json.Marshal(m)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
@@ -177,17 +177,17 @@ func (e Message[T]) Encode() ([]byte, error) {
 func Decode[T any](raw []byte) (Message[T], error) {
 	const op = "envelope.Decode"
 
-	var e Message[T]
+	var m Message[T]
 
-	if err := json.Unmarshal(raw, &e); err != nil {
-		return e, fmt.Errorf("%s: %w", op, err)
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return m, fmt.Errorf("%s: %w", op, err)
 	}
 
 	// Отправитель может быть старее этого получателя или вообще чужим
 	// сервисом: то, что приехало с транспорта, проверяют, а не принимают на веру
-	if err := e.Validate(); err != nil {
-		return e, fmt.Errorf("%s: %w", op, err)
+	if err := m.Validate(); err != nil {
+		return m, fmt.Errorf("%s: %w", op, err)
 	}
 
-	return e, nil
+	return m, nil
 }

@@ -296,8 +296,8 @@ func TestIntegrationOutboxToInbox(t *testing.T) {
 			if e.Version != want {
 				t.Fatalf("version = %d, want %d", e.Version, want)
 			}
-			if e.EntityID != "order-1" {
-				t.Fatalf("entity id = %q, want %q", e.EntityID, "order-1")
+			if e.Key != "order-1" {
+				t.Fatalf("key = %q, want %q", e.Key, "order-1")
 			}
 			if e.Payload == nil || e.Payload.Sum != 100*int(want) {
 				t.Fatalf("payload = %+v, want sum %d", e.Payload, 100*int(want))
