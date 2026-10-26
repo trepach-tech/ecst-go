@@ -160,7 +160,7 @@ func TestRecordFromEnvelope(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 
-	if out.Version != 7 || out.Payload.Sum != 100 {
+	if out.EntityVersion != 7 || out.Payload.Sum != 100 {
 		t.Fatalf("envelope = %+v, want version 7 and sum 100", out)
 	}
 }
