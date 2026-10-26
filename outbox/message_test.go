@@ -40,7 +40,7 @@ func TestTopicDecodesEnvelope(t *testing.T) {
 		t.Fatalf("handler: %v", err)
 	}
 
-	if got.Key != "order-1" || got.Version != 7 {
+	if got.Key != "order-1" || got.EntityVersion != 7 {
 		t.Fatalf("envelope = %+v, want order-1 v7", got)
 	}
 
