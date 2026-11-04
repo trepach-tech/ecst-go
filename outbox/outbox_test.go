@@ -103,10 +103,10 @@ func testWorker(t *testing.T, store *fakeStore) *Worker {
 	return w
 }
 
-func testMessage(t *testing.T, version int64) message.Message[order] {
+func testMessage(t *testing.T, version int64, op message.Op) message.Message[order] {
 	t.Helper()
 
-	return message.New("id", "order-1", "order", version, message.OpCreate, &order{Sum: 100}).
+	return message.New("id", "order-1", "order", version, op, &order{Sum: 100}).
 		WithSource("orders-service", "v1")
 }
 
@@ -121,7 +121,7 @@ var errPermanentStore = fmt.Errorf("constraint violation: %w", backoff.ErrPerman
 // Ключ записи - EntityID: события одной сущности должны лечь в одну партицию,
 // иначе их порядок потеряется
 func TestRecordFromEnvelope(t *testing.T) {
-	e := testMessage(t, 7).WithTraceID("trace-1")
+	e := testMessage(t, 7, message.OpUpdate).WithTraceID("trace-1")
 
 	msg, err := NewOutboxMessage("orders", e)
 	if err != nil {
@@ -160,13 +160,13 @@ func TestRecordFromEnvelope(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 
-	if out.Version != 7 || out.Payload.Sum != 100 {
+	if out.EntityVersion != 7 || out.Payload.Sum != 100 {
 		t.Fatalf("envelope = %+v, want version 7 and sum 100", out)
 	}
 }
 
 func TestNewOutboxMessageErrors(t *testing.T) {
-	valid := testMessage(t, 1)
+	valid := testMessage(t, 1, message.OpCreate)
 
 	tests := map[string]struct {
 		topic string
@@ -189,7 +189,7 @@ func TestNewOutboxMessageErrors(t *testing.T) {
 
 // Строка без топика в запись не собирается: публиковать ее некуда
 func TestRecordWithoutTopic(t *testing.T) {
-	msg, err := NewOutboxMessage("orders", testMessage(t, 1))
+	msg, err := NewOutboxMessage("orders", testMessage(t, 1, message.OpCreate))
 	if err != nil {
 		t.Fatalf("new outbox message: %v", err)
 	}

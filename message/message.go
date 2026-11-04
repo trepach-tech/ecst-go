@@ -25,10 +25,11 @@ func (o Op) known() bool {
 	return false
 }
 
-// hasPayload - обязан ли конверт с такой операцией нести payload.
-// Delete только сообщает, что сущности больше нет: состояния у нее уже не бывает
-// Нужен был проверки полноо удаления из сущности (отсутсвие payload означало tomstone Для кафки - удаление всех записей с этим ключом)
-func (o Op) hasPayload() bool { return o != OpDelete }
+// TODO:
+// Изучить тему tombstone получше
+// Просто удалять все события по ключу и nil payload, не подойдёт,
+// Kafka в таком случае удалит все события по ключу, а ключ не всегда id сущности
+func (o Op) ShouldKeepPreviousMessages() bool { return o != OpDelete }
 
 const (
 	OpCreate Op = "c" // сущность создана
@@ -47,7 +48,7 @@ func New[T any](idempotenceKey, key, entityType string, version int64, op Op, pa
 		IdempotenceKey: idempotenceKey,
 		Key:            key,
 		EntityType:     entityType,
-		Version:        version,
+		EntityVersion:  version,
 		Op:             op,
 		Payload:        payload,
 		Timestamp:      time.Now().UTC(),
@@ -63,7 +64,7 @@ type Message[T any] struct {
 	IdempotenceKey string    `json:"idempotence_key"`
 	Key            string    `json:"key"`
 	EntityType     string    `json:"entity_type"`
-	Version        int64     `json:"version"`
+	EntityVersion  int64     `json:"entity_version"`
 	Op             Op        `json:"op"`
 	Payload        *T        `json:"payload,omitempty"`
 	Timestamp      time.Time `json:"timestamp"`
@@ -114,8 +115,14 @@ func (m Message[T]) Validate() error {
 	}
 
 	// Version нужна получателю, чтоб отбрасывать уже примененные события
-	if m.Version <= 0 {
+	if m.EntityVersion <= 0 {
 		add("Version must be > 0")
+	}
+
+	if m.Op == OpCreate {
+		if m.EntityVersion != 1 {
+			add("entity version must be 1 for create operation")
+		}
 	}
 
 	switch {
@@ -123,7 +130,7 @@ func (m Message[T]) Validate() error {
 		add("Op is required")
 	case !m.Op.known():
 		add("unknown Op: " + string(m.Op))
-	case m.Op.hasPayload() && m.Payload == nil:
+	case m.Op.ShouldKeepPreviousMessages() && m.Payload == nil:
 		add("Payload is required for Op " + string(m.Op))
 	}
 

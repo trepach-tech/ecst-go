@@ -85,7 +85,7 @@ func add[T any](store *memStore, id, topic string, m message.Message[T]) {
 func handleOrder(ctx context.Context, m message.Message[Order]) error {
 	attrs := []any{
 		"key", m.Key,
-		"version", m.Version,
+		"version", m.EntityVersion,
 		"op", m.Op,
 		"sum", m.Payload.Sum,
 		"trace_id", m.TraceID,
@@ -106,13 +106,13 @@ func handleOrder(ctx context.Context, m message.Message[Order]) error {
 func handleUser(_ context.Context, m message.Message[User]) error {
 	// Delete приезжает без payload: состояния у удаленной сущности нет
 	if m.Op == message.OpDelete {
-		slog.Info("user deleted", "version", m.Version)
+		slog.Info("user deleted", "version", m.EntityVersion)
 
 		return nil
 	}
 
 	slog.Info("user applied",
-		"version", m.Version,
+		"version", m.EntityVersion,
 		"email", m.Payload.Email,
 	)
 

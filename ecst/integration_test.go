@@ -293,8 +293,8 @@ func TestIntegrationOutboxToInbox(t *testing.T) {
 	for want := int64(1); want <= events; want++ {
 		select {
 		case e := <-got:
-			if e.Version != want {
-				t.Fatalf("version = %d, want %d", e.Version, want)
+			if e.EntityVersion != want {
+				t.Fatalf("version = %d, want %d", e.EntityVersion, want)
 			}
 			if e.Key != "order-1" {
 				t.Fatalf("key = %q, want %q", e.Key, "order-1")
@@ -352,8 +352,8 @@ func TestIntegrationOutboxMarksBrokenRowFailed(t *testing.T) {
 	select {
 	case e := <-got:
 		// Битая строка не остановила здоровую
-		if e.Version != 2 {
-			t.Fatalf("version = %d, want 2", e.Version)
+		if e.EntityVersion != 2 {
+			t.Fatalf("version = %d, want 2", e.EntityVersion)
 		}
 	case <-time.After(45 * time.Second):
 		t.Fatal("здоровое событие не доехало до хендлера")
@@ -520,8 +520,8 @@ func TestIntegrationOutboxUndeliveredRowDoesNotBlockBatch(t *testing.T) {
 
 	select {
 	case e := <-got:
-		if e.Version != 2 {
-			t.Fatalf("version = %d, want 2", e.Version)
+		if e.EntityVersion != 2 {
+			t.Fatalf("version = %d, want 2", e.EntityVersion)
 		}
 	case <-time.After(45 * time.Second):
 		t.Fatal("здоровое событие не доехало до хендлера")
@@ -541,7 +541,7 @@ func TestIntegrationOutboxUndeliveredRowDoesNotBlockBatch(t *testing.T) {
 	// Событие не приезжает повторно: его строка больше не публикуется
 	select {
 	case e := <-got:
-		t.Fatalf("событие версии %d приехало повторно", e.Version)
+		t.Fatalf("событие версии %d приехало повторно", e.EntityVersion)
 	case <-time.After(5 * time.Second):
 	}
 }
