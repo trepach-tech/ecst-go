@@ -100,8 +100,11 @@ func (w *Worker) Stop() {
 	for _, c := range w.consumers {
 		c.Close()
 	}
-	// TODO: context timeout for close
-	w.dlqProducer.Close(context.Background())
+	if err := w.dlqProducer.Close(context.Background()); err != nil {
+		w.log.LogAttrs(context.Background(), slog.LevelError, "inbox: failed to close dlq producer",
+			slog.Any("error", err),
+		)
+	}
 
 	w.consumers = nil
 }

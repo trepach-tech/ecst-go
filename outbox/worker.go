@@ -247,6 +247,10 @@ func (w *Worker) Stop() {
 	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), closeTimeout)
 	defer cancel()
 
-	w.P.Close(closeCtx)
+	if err := w.P.Close(closeCtx); err != nil {
+		w.log.LogAttrs(context.Background(), slog.LevelError, "outbox: failed to close producer",
+			slog.Any("error", err),
+		)
+	}
 	w.P = nil
 }
