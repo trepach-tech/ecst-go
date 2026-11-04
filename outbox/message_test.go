@@ -34,7 +34,7 @@ func TestTopicDecodesEnvelope(t *testing.T) {
 		return nil
 	})
 
-	rec := &kgo.Record{Topic: "orders", Value: encode(t, testMessage(t, 7))}
+	rec := &kgo.Record{Topic: "orders", Value: encode(t, testMessage(t, 7, message.OpUpdate))}
 
 	if err := reg.Handler(context.Background(), rec); err != nil {
 		t.Fatalf("handler: %v", err)
@@ -58,7 +58,7 @@ func TestTopicPassesHandlerError(t *testing.T) {
 		return want
 	})
 
-	rec := &kgo.Record{Value: encode(t, testMessage(t, 1))}
+	rec := &kgo.Record{Value: encode(t, testMessage(t, 1, message.OpCreate))}
 
 	if err := reg.Handler(context.Background(), rec); !errors.Is(err, want) {
 		t.Fatalf("err = %v, want %v", err, want)
@@ -112,7 +112,7 @@ func TestTopicBrokenValueIsPermanent(t *testing.T) {
 
 // Топика, партиции и офсета в конверте нет: их достают из ctx
 func TestRecordFrom(t *testing.T) {
-	want := &kgo.Record{Topic: "orders", Partition: 3, Offset: 42, Value: encode(t, testMessage(t, 1))}
+	want := &kgo.Record{Topic: "orders", Partition: 3, Offset: 42, Value: encode(t, testMessage(t, 1, message.OpCreate))}
 
 	var got *kgo.Record
 
