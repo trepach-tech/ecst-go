@@ -86,11 +86,21 @@ func (m Message[T]) WithSource(service, schemaVer string) Message[T] {
 	return m
 }
 
+// SetSource fills Source on the message in place.
+func (m *Message[T]) SetSource(service, schemaVer string) {
+	m.Source = Source{Service: service, SchemaVer: schemaVer}
+}
+
 // WithTraceID связывает событие с запросом, в котором оно родилось
 func (m Message[T]) WithTraceID(traceID string) Message[T] {
 	m.TraceID = traceID
 
 	return m
+}
+
+// SetTraceID fills TraceID on the message in place.
+func (m *Message[T]) SetTraceID(traceID string) {
+	m.TraceID = traceID
 }
 
 // Validate возвращает все найденные проблемы разом.
